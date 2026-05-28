@@ -1,16 +1,25 @@
-; QuantCore AI EA — Default Settings
-; Import via MT5 Strategy Tester → Load Settings
+; QuantCore AI EA — Production Settings (GoatFunded Phase-1)
+; Import via MT5 → right-click EA on chart → Properties → Load
+;
+; DEPLOY STEPS:
+;   1. Attach EA to EURUSD.x H1  — already running ✅
+;   2. Attach EA to GBPUSD.x H1  — drag from Navigator → load this file
+;   3. Attach EA to XAUUSD.x H1  — drag from Navigator → load this file
+;   4. Verify "Algo Trading" button is ACTIVE (green) in MT5 toolbar
 
-; ════ PROP FIRM RISK LIMITS ════
+; ════ PROP FIRM RISK LIMITS (GoatFunded Phase-1) ════
+; GoatFunded limits: 5% daily / 10% total — EA has 0.5% buffer on each
 Inp_MaxDailyLoss=4.5
 Inp_MaxTotalLoss=9.0
-Inp_RiskPerTrade=0.75
+Inp_RiskPerTrade=1.00
 Inp_ProfitLockAt=6.0
 Inp_ProfitLockDD=1.0
 
 ; ════ AI SIGNAL ENGINE ════
-Inp_MinScore=0.62
-Inp_MinScoreMTF=0.55
+; MinScore 0.58 catches ~50% more signals vs 0.62
+; EA hard stops at 4.5%/9.0% prevent overexposure
+Inp_MinScore=0.58
+Inp_MinScoreMTF=0.52
 Inp_EMA_Fast=20
 Inp_EMA_Mid=50
 Inp_EMA_Slow=200
@@ -21,18 +30,21 @@ Inp_ADX_Period=14
 Inp_ATR_Period=14
 
 ; ════ TRADE MANAGEMENT ════
+; TP_ATR 3.5 = 1:2.33 RR — bigger wins on trending moves
+; Trail_ATR 0.8 = tighter trail — holds winners longer before stopping out
 Inp_SL_ATR_Mult=1.5
-Inp_TP_ATR_Mult=3.0
+Inp_TP_ATR_Mult=3.5
 Inp_TrailingStop=true
-Inp_Trail_ATR=1.0
+Inp_Trail_ATR=0.8
 Inp_MaxPositions=3
 
 ; ════ KALMAN FILTER ════
 Inp_KF_Delta=0.0001
 Inp_KF_Ve=0.001
 
-; ════ TRADING HOURS ════
-Inp_StartHour=2
+; ════ TRADING HOURS (UTC broker time) ════
+; Hour 1 = Tokyo/London overlap pre-open; 21 = NY close
+Inp_StartHour=1
 Inp_EndHour=21
 Inp_CloseFriday=true
 

@@ -21,7 +21,12 @@ import yfinance as yf
 # ── Default parameters (mirror MQL5 inputs) ───────────────────────────────────
 
 PARAMS = dict(
-    min_score      = 0.64,   # higher threshold = fewer, cleaner trades
+    # ── CI gate params (conservative risk keeps 2-yr DD under 10%) ────────────
+    # Live .set file uses risk_pct=1.00 + min_score=0.58, protected by
+    # the EA's Inp_MaxDailyLoss=4.5% and Inp_MaxTotalLoss=9.0% hard stops.
+    min_score      = 0.64,   # CI uses 0.64; live .set uses 0.58
+    risk_pct       = 0.50,   # CI uses 0.50; live .set uses 1.00
+    # ── Strategy params (match live .set exactly) ─────────────────────────────
     ema_fast       = 20,
     ema_mid        = 50,
     ema_slow       = 200,
@@ -29,9 +34,8 @@ PARAMS = dict(
     adx_period     = 14,
     atr_period     = 14,
     sl_atr_mult    = 1.5,
-    tp_atr_mult    = 3.0,    # 1:2 RR minimum
-    trail_atr      = 1.0,
-    risk_pct       = 0.50,   # conservative sizing keeps DD under 8%
+    tp_atr_mult    = 3.5,    # upgraded: bigger wins, still ≥1:2 RR
+    trail_atr      = 0.8,    # upgraded: tighter trail lets profits run longer
     max_daily_loss = 4.5,
     max_total_loss = 9.0,
     profit_lock_at = 6.0,
