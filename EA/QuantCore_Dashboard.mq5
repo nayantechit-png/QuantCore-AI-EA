@@ -195,7 +195,7 @@ void DrawPanel()
    DrawSep(ln++);
 
    // ── PHASE PROGRESS ──────────────────────────────────────────────
-   DrawTxt("_SP1",  "PHASE-1 TARGET  " + Inp_TargetPct + "%", x+PAD, y0+RowY(ln++), C_DIM, FontSize-1, false);
+   DrawTxt("_SP1",  StringFormat("PHASE-1 TARGET  %.0f%%", Inp_TargetPct), x+PAD, y0+RowY(ln++), C_DIM, FontSize-1, false);
    DrawProgressLine("PH1", phasePct, ln++);
    DrawKV("PHR", "Remaining", StringFormat("$%s", FmtMoney(remaining)), C_YELLOW, ln++);
    DrawKV("PH2", "1 symbol",  StringFormat("~%d days", daysToCur),  C_WHITE,  ln++);
