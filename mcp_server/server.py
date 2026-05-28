@@ -560,6 +560,47 @@ def quantcore_lstm_forecast(
         return f"❌ LSTM error: {e}"
 
 
+@mcp.tool(name="quantcore_genetic_optimize",
+          description="Run Genetic Algorithm to evolve optimal QuantCore signal weights and strategy parameters. Returns ready-to-paste .set file values.",
+          annotations={"readOnlyHint":True})
+def quantcore_genetic_optimize(
+    symbol:      Annotated[str,   Field(description="Yahoo Finance symbol e.g. EURUSD=X")] = "EURUSD=X",
+    period:      Annotated[str,   Field(description="History: 1y 2y")] = "2y",
+    generations: Annotated[int,   Field(description="GA generations (30=fast, 80=thorough)")] = 50,
+    pop_size:    Annotated[int,   Field(description="Population size (20-50)")] = 30,
+) -> str:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from quantcore.strategies.genetic_optimizer import GeneticOptimizer
+        ga   = GeneticOptimizer(pop_size=pop_size, generations=generations)
+        best = ga.run(symbol, period, verbose=False)
+        g    = best.genes / best.genes[:5].sum() * best.genes[:5].sum()  # already normalised
+        import numpy as np; g = best.genes.copy(); g[:5] /= g[:5].sum()
+        return (
+            f"## 🧬 Genetic Optimizer — {symbol}\n\n"
+            f"**Fitness: {best.score:.4f}** (gen {best.generation}/{generations})\n\n"
+            f"|Metric|Value|\n|---|---|\n"
+            f"|Net P&L|{best.backtest.get('net_pnl_pct',0):+.1f}%|\n"
+            f"|Max Drawdown|{best.backtest.get('max_drawdown_pct',0):.1f}%|\n"
+            f"|Sharpe|{best.backtest.get('sharpe',0):.3f}|\n"
+            f"|Win Rate|{best.backtest.get('win_rate_pct',0):.1f}%|\n\n"
+            f"### 📋 Paste into `QuantCore_AI_EA.set`\n\n"
+            f"```ini\n"
+            f"W_Trend={g[0]:.4f}\n"
+            f"W_Momentum={g[1]:.4f}\n"
+            f"W_Regime={g[2]:.4f}\n"
+            f"W_Kalman={g[3]:.4f}\n"
+            f"W_MTF={g[4]:.4f}\n"
+            f"Inp_MinScore={g[5]:.3f}\n"
+            f"Inp_SL_ATR_Mult={g[6]:.2f}\n"
+            f"Inp_TP_ATR_Mult={g[7]:.2f}\n"
+            f"Inp_RiskPerTrade={g[8]:.2f}\n"
+            f"```"
+        )
+    except Exception as e:
+        return f"❌ GA error: {e}"
+
+
 @mcp.tool(name="quantcore_rl_predict",
           description="Run PPO/A2C Reinforcement Learning agent: train on price history and return LONG/SHORT/HOLD action recommendation.",
           annotations={"readOnlyHint":True,"openWorldHint":True})
