@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuantCore AI EA — GoatFunded Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #0a0e1a;
+    --bg2:       #0f1525;
+    --bg3:       #141c2e;
+    --border:    #1e2d4a;
+    --accent:    #00d4ff;
+    --green:     #00e676;
+    --red:       #ff1744;
+    --yellow:    #ffd740;
+    --purple:    #7c4dff;
+    --text:      #e0e8ff;
+    --dim:       #5a6a8a;
+    --card-r:    10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────── */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    margin-bottom: 16px;
+  }
+  header .logo { color: var(--accent); font-size: 1.1rem; font-weight: bold; letter-spacing: 2px; }
+  header .sub  { color: var(--dim);   font-size: 0.75rem; margin-top: 2px; }
+  header .live { display: flex; align-items: center; gap: 8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  #clock { color: var(--dim); font-size: 0.8rem; }
+
+  /* ── GRID ───────────────────────────────────────────────── */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr;        gap: 12px; margin-bottom: 12px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px; }
+  .span2  { grid-column: span 2; }
+
+  /* ── CARD ───────────────────────────────────────────────── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  .card.green::before  { background: linear-gradient(90deg, var(--green), transparent); }
+  .card.yellow::before { background: linear-gradient(90deg, var(--yellow), transparent); }
+  .card.red::before    { background: linear-gradient(90deg, var(--red), transparent); }
+  .card.purple::before { background: linear-gradient(90deg, var(--purple), transparent); }
+
+  .card-title {
+    font-size: 0.65rem;
+    letter-spacing: 2px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .card-value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: var(--text);
+    line-height: 1;
+  }
+  .card-sub {
+    font-size: 0.75rem;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+  .up   { color: var(--green); }
+  .down { color: var(--red); }
+  .warn { color: var(--yellow); }
+
+  /* ── PROGRESS BAR ───────────────────────────────────────── */
+  .progress-wrap { margin: 10px 0 4px; }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--dim);
+    margin-bottom: 5px;
+  }
+  .progress-track {
+    height: 8px;
+    background: var(--bg3);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1s ease;
+  }
+  .fill-green  { background: linear-gradient(90deg, #00e676, #69f0ae); }
+  .fill-yellow { background: linear-gradient(90deg, #ffd740, #ffff00); }
+  .fill-red    { background: linear-gradient(90deg, #ff1744, #ff6e40); }
+  .fill-accent { background: linear-gradient(90deg, #00d4ff, #7c4dff); }
+
+  /* ── COUNTDOWN ──────────────────────────────────────────── */
+  .countdown-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .countdown-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+  }
+  .countdown-days { font-size: 2rem; font-weight: bold; color: var(--accent); line-height: 1; }
+  .countdown-label { font-size: 0.62rem; color: var(--dim); margin-top: 2px; letter-spacing: 1px; }
+  .countdown-req   { font-size: 0.7rem;  color: var(--yellow); margin-top: 4px; }
+
+  /* ── TABLE ──────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+  th {
+    color: var(--dim);
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 1px;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+  }
+  td { padding: 7px 8px; border-bottom: 1px solid rgba(30,45,74,0.5); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(0,212,255,0.04); }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+  .badge-buy    { background: rgba(0,230,118,0.15); color: var(--green); }
+  .badge-sell   { background: rgba(255,23,68,0.15);  color: var(--red); }
+  .badge-qc     { background: rgba(0,212,255,0.15);  color: var(--accent); }
+  .badge-other  { background: rgba(90,106,138,0.15); color: var(--dim); }
+
+  /* ── SETTINGS GRID ──────────────────────────────────────── */
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .setting-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .setting-key   { font-size: 0.62rem; color: var(--dim); letter-spacing: 1px; }
+  .setting-value { font-size: 1.1rem;  color: var(--green); font-weight: bold; margin-top: 2px; }
+
+  /* ── CHECKLIST ──────────────────────────────────────────── */
+  .checklist { list-style: none; margin-top: 8px; }
+  .checklist li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.78rem;
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .check-done    { color: var(--green); font-size: 1rem; }
+  .check-pending { color: var(--yellow); font-size: 1rem; }
+
+  /* ── STAT ROW ───────────────────────────────────────────── */
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(30,45,74,0.5);
+    font-size: 0.78rem;
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-key { color: var(--dim); }
+  .stat-val { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────── -->
+<header>
+  <div>
+    <div class="logo">⚡ QUANTCORE AI EA</div>
+    <div class="sub">GoatFunded — Phase 1 Mission Control</div>
+  </div>
+  <div style="text-align:center">
+    <div style="color:var(--dim);font-size:.7rem">ACCOUNT</div>
+    <div style="color:var(--accent);font-weight:bold">514733813 — Faisal_Amir-Phase_1</div>
+  </div>
+  <div class="live">
+    <div class="dot"></div>
+    <div>
+      <div style="color:var(--green);font-size:.75rem;font-weight:bold">LIVE DEMO</div>
+      <div id="clock" style="font-size:.7rem"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ── ROW 1: KPI CARDS ───────────────────────────────────── -->
+<div class="grid-4" style="margin-bottom:12px">
+
+  <div class="card green">
+    <div class="card-title">Balance</div>
+    <div class="card-value up">$103,183</div>
+    <div class="card-sub">Deposit: $100,000</div>
+  </div>
+
+  <div class="card green">
+    <div class="card-title">Net P&amp;L</div>
+    <div class="card-value up">+$3,183</div>
+    <div class="card-sub up">+3.18% total return</div>
+  </div>
+
+  <div class="card yellow">
+    <div class="card-title">Today's P&amp;L</div>
+    <div class="card-value up" id="today-pnl">+$545</div>
+    <div class="card-sub up">QuantCore signal 0.696</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Phase Target</div>
+    <div class="card-value warn">39.8%</div>
+    <div class="card-sub">$4,817 remaining</div>
+  </div>
+
+</div>
+
+<!-- ── ROW 2: PROGRESS + SAFETY ──────────────────────────── -->
+<div class="grid-2" style="margin-bottom:12px">
+
+  <!-- Phase progress -->
+  <div class="card">
+    <div class="card-title">🎯 Phase-1 Progress — 8% Target ($8,000)</div>
+
+    <div style="margin-top:12px">
+      <div class="progress-label">
+        <span>Current: +$3,183  (+3.18%)</span>
+        <span class="warn">39.8% complete</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill fill-accent" style="width:39.8%"></div>
+      </div>
+    </div>
+
+    <div class="countdown-grid" style="margin-top:14px">
+      <div class="countdown-box">
+        <div class="countdown-days" id="days-cur">5</div>
+        <div class="countdown-label">DAYS TO PASS</div>
+        <div class="countdown-req">1 symbol</div>
+      </div>
+      <div class="countdown-box" style="border-color:var(--green)">
+        <div class="countdown-days" style="color:var(--green)" id="days-3sym">2</div>
+        <div class="countdown-label">DAYS TO PASS</div>
+        <div class="countdown-req" style="color:var(--green)">3 symbols 🚀</div>
+      </div>
+      <div class="countdown-box">
+        <div class="countdown-days" style="color:var(--yellow)">$1,071</div>
+        <div class="countdown-label">AVG / DAY</div>
+        <div class="countdown-req">3-day average</div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <div class="progress-label">
+        <span>Required pace (10-day pass): $479/day</span>
+        <span class="up">Already exceeding ✅</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill fill-green" style="width:100%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prop firm safety -->
+  <div class="card">
+    <div class="card-title">🛡 Prop Firm Safety — GoatFunded</div>
+
+    <div class="progress-wrap" style="margin-top:12px">
+      <div class="progress-label">
+        <span>Daily Loss Limit (5.0%)</span>
+        <span class="up">0.0% used  —  5.0% buffer</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill fill-green" id="daily-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="progress-wrap" style="margin-top:10px">
+      <div class="progress-label">
+        <span>Total Drawdown (10.0%)</span>
+        <span class="up">0.0% used  —  10.0% buffer</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill fill-green" id="total-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding:10px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);border-radius:6px;font-size:.78rem">
+      <span class="up">✅ SAFE</span> &nbsp; Full buffer available on both limits.<br>
+      <span style="color:var(--dim)">Max open risk at 3 positions × 1% = 3% — still 2% below daily limit.</span>
+    </div>
+
+    <div class="stat-row" style="margin-top:12px">
+      <span class="stat-key">EA Hard Stop (daily)</span>
+      <span class="stat-val warn">4.5%</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">EA Hard Stop (total)</span>
+      <span class="stat-val warn">9.0%</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">Broker limit (daily)</span>
+      <span class="stat-val">5.0%</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">Broker limit (total)</span>
+      <span class="stat-val">10.0%</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── ROW 3: CHART + TRADE STATS ─────────────────────────── -->
+<div class="grid-2" style="margin-bottom:12px">
+
+  <div class="card">
+    <div class="card-title">📅 Daily P&amp;L — Challenge Progress</div>
+    <canvas id="pnlChart" height="180"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 Trade Statistics</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+      <div>
+        <div style="color:var(--dim);font-size:.65rem;letter-spacing:1px;margin-bottom:8px;margin-top:4px">ALL EAs</div>
+        <div class="stat-row"><span class="stat-key">Total Trades</span>   <span class="stat-val">12</span></div>
+        <div class="stat-row"><span class="stat-key">Win Rate</span>        <span class="stat-val up">83.3%</span></div>
+        <div class="stat-row"><span class="stat-key">Avg Win</span>         <span class="stat-val up">$332</span></div>
+        <div class="stat-row"><span class="stat-key">Avg Loss</span>        <span class="stat-val down">-$57</span></div>
+        <div class="stat-row"><span class="stat-key">Profit Factor</span>   <span class="stat-val up">29.1</span></div>
+        <div class="stat-row"><span class="stat-key">Gross Wins</span>      <span class="stat-val up">$3,329</span></div>
+        <div class="stat-row"><span class="stat-key">Gross Loss</span>      <span class="stat-val down">-$114</span></div>
+      </div>
+      <div style="padding-left:14px;border-left:1px solid var(--border)">
+        <div style="color:var(--accent);font-size:.65rem;letter-spacing:1px;margin-bottom:8px;margin-top:4px">QUANTCORE ONLY ✨</div>
+        <div class="stat-row"><span class="stat-key">Signals</span>         <span class="stat-val">1</span></div>
+        <div class="stat-row"><span class="stat-key">Win Rate</span>        <span class="stat-val up">100%</span></div>
+        <div class="stat-row"><span class="stat-key">Avg Score</span>       <span class="stat-val warn">0.696</span></div>
+        <div class="stat-row"><span class="stat-key">Today P&L</span>       <span class="stat-val up">+$545</span></div>
+        <div class="stat-row"><span class="stat-key">Symbol</span>          <span class="stat-val">EURUSD</span></div>
+        <div class="stat-row"><span class="stat-key">Lots</span>            <span class="stat-val">4.10</span></div>
+        <div class="stat-row"><span class="stat-key">RR achieved</span>     <span class="stat-val up">1:1.74</span></div>
+      </div>
+    </div>
+    <canvas id="winChart" height="90" style="margin-top:14px"></canvas>
+  </div>
+
+</div>
+
+<!-- ── ROW 4: RECENT TRADES ───────────────────────────────── -->
+<div class="card" style="margin-bottom:12px">
+  <div class="card-title">📋 Recent Trades</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th><th>Symbol</th><th>Side</th><th>Lots</th>
+        <th>Open</th><th>Close</th><th>P&amp;L</th><th>EA</th>
+      </tr>
+    </thead>
+    <tbody id="trades-body"></tbody>
+  </table>
+</div>
+
+<!-- ── ROW 5: SETTINGS + CHECKLIST ───────────────────────── -->
+<div class="grid-2" style="margin-bottom:12px">
+
+  <div class="card green">
+    <div class="card-title">⚙ Deployed Settings — Production .set File</div>
+    <div class="settings-grid">
+      <div class="setting-item">
+        <div class="setting-key">RISK / TRADE</div>
+        <div class="setting-value">1.00%</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">MIN SCORE</div>
+        <div class="setting-value">0.58</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">TP ATR MULT</div>
+        <div class="setting-value">3.5×</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">TRAIL ATR</div>
+        <div class="setting-value">0.8×</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">SL ATR MULT</div>
+        <div class="setting-value">1.5×</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">MAX POSITIONS</div>
+        <div class="setting-value">3</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">TRADE HOURS</div>
+        <div class="setting-value">01–21</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">DAILY STOP</div>
+        <div class="setting-value warn">4.5%</div>
+      </div>
+      <div class="setting-item">
+        <div class="setting-key">TOTAL STOP</div>
+        <div class="setting-value warn">9.0%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card yellow">
+    <div class="card-title">✅ MT5 Deploy Checklist</div>
+    <ul class="checklist">
+      <li><span class="check-done">✅</span> <div><strong>EURUSD.x H1</strong> — QuantCore_AI_EA running<br><span style="color:var(--dim);font-size:.7rem">Signal 0.696 fired · $545.30 profit today</span></div></li>
+      <li><span class="check-pending">⬜</span> <div><strong>GBPUSD.x H1</strong> — Drag EA + load .set file<br><span style="color:var(--dim);font-size:.7rem">Navigator → drag QuantCore_AI_EA → Properties → Load</span></div></li>
+      <li><span class="check-pending">⬜</span> <div><strong>XAUUSD.x H1</strong> — Drag EA + load .set file<br><span style="color:var(--dim);font-size:.7rem">Gold moves 3–5× forex  →  highest profit potential</span></div></li>
+      <li><span class="check-pending">⬜</span> <div><strong>Verify Algo Trading</strong> — Green button in toolbar<br><span style="color:var(--dim);font-size:.7rem">All 3 charts must show smiley face icon on EA</span></div></li>
+    </ul>
+    <div style="margin-top:12px;padding:10px;background:rgba(255,215,64,0.08);border:1px solid rgba(255,215,64,0.2);border-radius:6px;font-size:.78rem">
+      <span class="warn">🚀 With all 3 charts active</span><br>
+      <span style="color:var(--dim)">Estimated pass date: <strong style="color:var(--green)">30 May 2026</strong> (~2 trading days)</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── FOOTER ─────────────────────────────────────────────── -->
+<div style="text-align:center;color:var(--dim);font-size:.65rem;padding:8px;letter-spacing:1px">
+  QUANTCORE AI EA · GOATFUNDED PHASE-1 · CI: 4/4 PASS ✅ · github.com/nayantechit-png/QuantCore-AI-EA
+</div>
+
+<script>
+// ── CLOCK ────────────────────────────────────────────────────
+function tick() {
+  const d = new Date();
+  document.getElementById('clock').textContent =
+    d.toUTCString().slice(5,25) + ' UTC';
+}
+tick(); setInterval(tick, 1000);
+
+// ── TRADES DATA ──────────────────────────────────────────────
+const trades = [
+  {date:'28 May', sym:'EURUSD', side:'BUY', lots:'4.10', open:'1.16327', close:'1.16460', pnl:545.30,  ea:'QuantCore'},
+  {date:'27 May', sym:'XAUUSD', side:'BUY', lots:'0.29', open:'4,434.5', close:'4,451.8', pnl:502.57,  ea:'GFv8_H1_L'},
+  {date:'27 May', sym:'NZDUSD', side:'SELL',lots:'8.27', open:'0.59006', close:'0.58933', pnl:603.71,  ea:'GFv8_M30_S'},
+  {date:'27 May', sym:'NZDUSD', side:'BUY', lots:'1.00', open:'0.59029', close:'0.59024', pnl:-5.00,   ea:''},
+  {date:'27 May', sym:'AUDUSD', side:'BUY', lots:'1.00', open:'0.71339', close:'0.71350', pnl:11.00,   ea:''},
+  {date:'27 May', sym:'AUDUSD', side:'BUY', lots:'8.25', open:'0.71383', close:'0.71456', pnl:602.25,  ea:'GFv8_M30_L'},
+  {date:'26 May', sym:'GBPUSD', side:'BUY', lots:'7.43', open:'1.34602', close:'1.34687', pnl:631.55,  ea:'GFv8_M30_L'},
+  {date:'26 May', sym:'XAUUSD', side:'BUY', lots:'0.20', open:'4,510.0', close:'4,519.6', pnl:192.60,  ea:''},
+  {date:'26 May', sym:'XAUUSD', side:'BUY', lots:'0.20', open:'4,513.3', close:'4,519.6', pnl:127.00,  ea:''},
+  {date:'26 May', sym:'XAUUSD', side:'BUY', lots:'0.20', open:'4,525.1', close:'4,519.6', pnl:-109.40, ea:''},
+];
+
+const tbody = document.getElementById('trades-body');
+trades.forEach(t => {
+  const positive = t.pnl >= 0;
+  const pnlStr   = (positive ? '+' : '') + '$' + Math.abs(t.pnl).toFixed(2);
+  const pnlCls   = positive ? 'up' : 'down';
+  const sideCls  = t.side === 'BUY' ? 'buy' : 'sell';
+  const eaCls    = t.ea === 'QuantCore' ? 'qc' : t.ea ? '' : 'other';
+  const eaLabel  = t.ea === 'QuantCore' ? '✨ QuantCore' : t.ea || '—';
+  tbody.innerHTML += `
+    <tr>
+      <td style="color:var(--dim)">${t.date}</td>
+      <td><strong>${t.sym}</strong></td>
+      <td><span class="badge badge-${sideCls}">${t.side}</span></td>
+      <td>${t.lots}</td>
+      <td style="color:var(--dim)">${t.open}</td>
+      <td style="color:var(--dim)">${t.close}</td>
+      <td class="${pnlCls}" style="font-weight:bold">${pnlStr}</td>
+      <td><span class="badge badge-${eaCls}">${eaLabel}</span></td>
+    </tr>`;
+});
+
+// ── DAILY P&L CHART ──────────────────────────────────────────
+const pnlCtx = document.getElementById('pnlChart').getContext('2d');
+new Chart(pnlCtx, {
+  type: 'bar',
+  data: {
+    labels: ['26 May', '27 May', '28 May (live)'],
+    datasets: [{
+      label: 'Daily P&L ($)',
+      data: [954.39, 1714.53, 545.30],
+      backgroundColor: ['rgba(0,212,255,.25)', 'rgba(0,230,118,.3)', 'rgba(255,215,64,.3)'],
+      borderColor:     ['#00d4ff','#00e676','#ffd740'],
+      borderWidth: 2,
+      borderRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: { label: c => ' $' + c.parsed.y.toLocaleString() }
+      }
+    },
+    scales: {
+      x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#5a6a8a' } },
+      y: {
+        grid: { color: 'rgba(255,255,255,.04)' },
+        ticks: { color: '#5a6a8a', callback: v => '$' + v.toLocaleString() },
+        beginAtZero: true,
+      }
+    }
+  }
+});
+
+// ── WIN RATE DOUGHNUT ────────────────────────────────────────
+const winCtx = document.getElementById('winChart').getContext('2d');
+new Chart(winCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Wins (10)', 'Losses (2)'],
+    datasets: [{
+      data: [10, 2],
+      backgroundColor: ['rgba(0,230,118,.35)', 'rgba(255,23,68,.25)'],
+      borderColor:     ['#00e676','#ff1744'],
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true,
+    cutout: '72%',
+    plugins: {
+      legend: {
+        position: 'right',
+        labels: { color: '#5a6a8a', font: { size: 11 }, boxWidth: 12 }
+      },
+      tooltip: { callbacks: { label: c => ' ' + c.label } }
+    }
+  }
+});
+</script>
+</body>
+</html>
