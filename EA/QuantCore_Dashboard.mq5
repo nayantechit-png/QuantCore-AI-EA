@@ -57,9 +57,16 @@ int OnInit()
   }
 void OnDeinit(const int) { EventKillTimer(); Wipe(); }
 void OnTimer()           { DrawPanel(); }
-int  OnCalculate(const int rates_total,const int,const datetime&,
-                 const double&,const double&,const double&,
-                 const double&,const long&,const long&,const int&)
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double   &open[],
+                const double   &high[],
+                const double   &low[],
+                const double   &close[],
+                const long     &tick_volume[],
+                const long     &volume[],
+                const int      &spread[])
   { DrawPanel(); return rates_total; }
 
 //+------------------------------------------------------------------+
