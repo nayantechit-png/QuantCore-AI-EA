@@ -560,5 +560,44 @@ def quantcore_lstm_forecast(
         return f"❌ LSTM error: {e}"
 
 
+@mcp.tool(name="quantcore_rl_predict",
+          description="Run PPO/A2C Reinforcement Learning agent: train on price history and return LONG/SHORT/HOLD action recommendation.",
+          annotations={"readOnlyHint":True,"openWorldHint":True})
+def quantcore_rl_predict(
+    symbol:      Annotated[str, Field(description="Yahoo Finance symbol e.g. EURUSD=X")] = "EURUSD=X",
+    period:      Annotated[str, Field(description="Training history: 1y 2y")] = "2y",
+    total_steps: Annotated[int, Field(description="Training timesteps (100k=fast, 500k=quality)")] = 200_000,
+    algo:        Annotated[str, Field(description="'PPO' or 'A2C'")] = "PPO",
+    model_path:  Annotated[Optional[str], Field(description="Load pre-trained .zip instead of training")] = None,
+) -> str:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from quantcore.strategies.rl_agent import RLAgent
+        agent = RLAgent(algo=algo, total_steps=total_steps)
+        if model_path and Path(model_path).exists():
+            agent.load(model_path, symbol)
+            action, _ = agent.predict(symbol)
+            return (f"## 🤖 RL Agent ({algo}) — {symbol} (pre-trained)\n\n"
+                    f"**Recommendation: {'🟢 LONG' if action=='LONG' else '🔴 SHORT' if action=='SHORT' else '⚪ HOLD'}**\n")
+        r = agent.train(symbol, period, verbose=False)
+        action, _ = agent.predict(symbol)
+        icons = {"LONG":"🟢","SHORT":"🔴","HOLD":"⚪"}
+        return (
+            f"## 🤖 RL Agent ({algo}) — {symbol}\n\n"
+            f"**Recommendation: {icons.get(action,'')} {action}**\n\n"
+            f"|Training Metric|Value|\n|---|---|\n"
+            f"|Steps|{r['total_steps']:,}|\n"
+            f"|Test Return|{r['return_pct']:+.2f}%|\n"
+            f"|Final Balance|${r['final_balance']:,.2f}|\n"
+            f"|Sharpe|{r['sharpe']:.3f}|\n\n"
+            f"> For better results use `total_steps=500000`. "
+            f"Combine with `quantcore_get_signal` for confirmation."
+        )
+    except ImportError as e:
+        return f"❌ Missing packages: {e}\nRun: mcp_server/.venv/bin/pip install gymnasium stable-baselines3"
+    except Exception as e:
+        return f"❌ RL error: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
