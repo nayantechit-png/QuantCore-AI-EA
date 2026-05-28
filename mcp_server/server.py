@@ -640,5 +640,66 @@ def quantcore_rl_predict(
         return f"❌ RL error: {e}"
 
 
+@mcp.tool(name="quantcore_send_alert",
+          description="Send a trading alert to Telegram and/or Discord. Types: signal, trade_opened, trade_closed, phase_update, safety_warning, phase_passed.",
+          annotations={"readOnlyHint":False,"openWorldHint":True})
+def quantcore_send_alert(
+    alert_type: Annotated[str,   Field(description="signal|trade_opened|trade_closed|phase_update|safety_warning|phase_passed")] = "signal",
+    symbol:     Annotated[str,   Field(description="Trading symbol e.g. EURUSD")] = "EURUSD",
+    direction:  Annotated[str,   Field(description="BUY or SELL")] = "BUY",
+    score:      Annotated[float, Field(description="Signal score 0-1")] = 0.696,
+    price:      Annotated[float, Field(description="Entry/current price")] = 1.16327,
+    sl:         Annotated[float, Field(description="Stop loss price")] = 1.16200,
+    tp:         Annotated[float, Field(description="Take profit price")] = 1.16700,
+    lots:       Annotated[float, Field(description="Position size in lots")] = 4.1,
+    pnl:        Annotated[float, Field(description="Closed P&L in USD")] = 0.0,
+    balance:    Annotated[float, Field(description="Account balance")] = 103537.0,
+    deposit:    Annotated[float, Field(description="Initial deposit")] = 100000.0,
+    dry_run:    Annotated[bool,  Field(description="Print message without sending")] = False,
+) -> str:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from quantcore.alerts.notifier import Notifier, _tg_signal, _tg_trade_opened, _tg_trade_closed, _tg_phase_update, _tg_safety_warning, _tg_phase_passed
+        n = Notifier()
+        status = n.status()
+
+        if dry_run:
+            templates = {
+                "signal":          _tg_signal(symbol,direction,score,price,sl,tp,lots),
+                "trade_opened":    _tg_trade_opened(symbol,direction,lots,price,sl,tp),
+                "trade_closed":    _tg_trade_closed(symbol,direction,lots,price,price+0.001,pnl),
+                "phase_update":    _tg_phase_update(balance,deposit,8.0),
+                "safety_warning":  _tg_safety_warning("Daily DD",3.2,5.0),
+                "phase_passed":    _tg_phase_passed(balance,deposit),
+            }
+            msg = templates.get(alert_type, "Unknown alert type")
+            return f"## 📋 Alert Preview ({alert_type})\n\n```\n{msg}\n```\n\n{status}"
+
+        if alert_type == "signal":
+            r = n.signal(symbol, direction, score, price, sl, tp, lots)
+        elif alert_type == "trade_opened":
+            r = n.trade_opened(symbol, direction, lots, price, sl, tp)
+        elif alert_type == "trade_closed":
+            r = n.trade_closed(symbol, direction, lots, price, price+(tp-price)*0.3, pnl)
+        elif alert_type == "phase_update":
+            r = n.phase_update(balance, deposit, 8.0, force=True)
+        elif alert_type == "safety_warning":
+            r = n.safety_warning("Daily DD", (deposit-balance)/deposit*100, 5.0)
+        elif alert_type == "phase_passed":
+            r = n.phase_passed(balance, deposit)
+        else:
+            return f"❌ Unknown alert_type: {alert_type}"
+
+        sent_to = []
+        if r and r.get("telegram"): sent_to.append("✅ Telegram")
+        elif r and r.get("telegram") is False: sent_to.append("❌ Telegram (failed)")
+        if r and r.get("discord"):  sent_to.append("✅ Discord")
+        elif r and r.get("discord") is False: sent_to.append("❌ Discord (failed)")
+        if not sent_to: sent_to = ["⚠️ No channels configured — set TELEGRAM_BOT_TOKEN or DISCORD_WEBHOOK_URL"]
+        return f"## 📨 Alert Sent — {alert_type}\n\n" + "\n".join(sent_to)
+    except Exception as e:
+        return f"❌ Alert error: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
