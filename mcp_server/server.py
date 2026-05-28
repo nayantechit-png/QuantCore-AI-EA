@@ -701,5 +701,54 @@ def quantcore_send_alert(
         return f"❌ Alert error: {e}"
 
 
+@mcp.tool(name="quantcore_sync_history",
+          description="Import an MT5 history CSV into the local SQLite database, return new trade count and updated Phase-1 stats. Optionally start the live file watcher.",
+          annotations={"readOnlyHint":False})
+def quantcore_sync_history(
+    csv_path:    Annotated[Optional[str], Field(description="MT5 History CSV to import. Omit to show DB status.")] = None,
+    watch_dir:   Annotated[Optional[str], Field(description="Start watcher on this directory (runs in background)")] = None,
+    response_format: Annotated[str,       Field(description="'markdown' or 'json'")] = "markdown",
+) -> str:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from quantcore.sync.mt5_watcher import MT5Watcher, _stats_from_db, _db_connect, parse_csv, _insert_trade
+        import subprocess as sp
+
+        if watch_dir:
+            # Launch watcher as background process
+            cmd = [sys.executable, str(ROOT/"quantcore"/"sync"/"mt5_watcher.py"),
+                   "--watch", watch_dir, "--quiet"]
+            sp.Popen(cmd, start_new_session=True)
+            return f"✅ MT5 Watcher started on: `{watch_dir}`\nDropping any MT5 History CSV there will auto-sync."
+
+        conn = _db_connect()
+        new_count = 0
+        if csv_path:
+            if not Path(csv_path).exists():
+                return f"❌ File not found: {csv_path}"
+            trades = parse_csv(csv_path)
+            for t in trades:
+                if _insert_trade(conn, t): new_count += 1
+
+        stats = _stats_from_db(conn)
+        if response_format == "json":
+            return json.dumps({**stats, "new_trades_imported": new_count}, indent=2)
+
+        lines = [f"## 🔄 MT5 Sync\n"]
+        if csv_path: lines.append(f"**{new_count} new trades imported** from `{Path(csv_path).name}`\n")
+        lines += [
+            f"|Field|Value|\n|---|---|",
+            f"|Balance|**${stats['balance']:,.2f}**|",
+            f"|Net P&L|${stats['total_pnl']:+,.2f} ({stats['net_pct']:+.2f}%)|",
+            f"|Today|${stats['today_pnl']:+,.2f}|",
+            f"|Phase-1|{stats['phase_pct']:.1f}% — ${stats['remaining']:,.2f} remaining|",
+            f"|Trades|{stats['total_trades']} (WR {stats['win_rate']:.0f}%)|",
+            f"|Drawdown|{stats['drawdown']:.2f}%|",
+        ]
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ Sync error: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
