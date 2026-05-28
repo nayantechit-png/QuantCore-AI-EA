@@ -99,14 +99,14 @@ def load_csv(path: str) -> list[dict]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def analyse(trades: list, account: dict) -> dict:
-    deposit = account["deposit"]
-    balance = account["balance"]
-    today   = date.today().isoformat()
+    from datetime import timedelta
+    deposit    = account["deposit"]
+    balance    = account["balance"]
+    target_pct = account["target_pct"]
+    today      = date.today().isoformat()
 
-    # Filter QuantCore trades by comment
     qc_trades = [t for t in trades if "QuantCore" in t.get("comment", "")]
 
-    # All trades stats
     wins      = [t for t in trades if t["profit"] > 0]
     losses    = [t for t in trades if t["profit"] < 0]
     total_pnl = sum(t["profit"] for t in trades)
@@ -114,57 +114,93 @@ def analyse(trades: list, account: dict) -> dict:
     gross_win = sum(t["profit"] for t in wins)
     gross_los = abs(sum(t["profit"] for t in losses))
 
-    # QuantCore-only stats
-    qc_wins   = [t for t in qc_trades if t["profit"] > 0]
-    qc_today  = sum(t["profit"] for t in qc_trades if t["date"] == today)
-    qc_avg_sc = _extract_scores(qc_trades)
+    qc_wins  = [t for t in qc_trades if t["profit"] > 0]
+    qc_today = sum(t["profit"] for t in qc_trades if t["date"] == today)
+    qc_avg_sc= _extract_scores(qc_trades)
 
-    # Daily P&L breakdown
     daily = defaultdict(float)
     for t in trades:
         daily[t["date"]] += t["profit"]
 
-    # Drawdown from deposit
-    dd_pct   = max(0, (deposit - balance) / deposit * 100)  # simplified
-    daily_dd = max(0, (deposit - balance) / deposit * 100)  # same simplified
+    # ── Pace tracking ─────────────────────────────────────────────────────────
+    target_profit  = deposit * target_pct / 100        # e.g. $8,000
+    remaining      = max(0, target_profit - total_pnl)
+    days_active    = max(1, len(daily))
+    avg_daily      = total_pnl / days_active            # actual avg P&L/day
 
-    # Prop firm proximity (using deposit as baseline, no running max)
-    daily_limit  = account["max_daily"]
-    total_limit  = account["max_total"]
-    daily_used   = min(100, daily_dd / daily_limit * 100)  if daily_limit else 0
-    total_used   = min(100, dd_pct   / total_limit * 100) if total_limit else 0
+    # Required daily pace to pass in fixed windows
+    req_5d   = remaining / 5  if remaining > 0 else 0
+    req_10d  = remaining / 10 if remaining > 0 else 0
 
-    # Phase progress toward target
-    profit_pct   = (balance - deposit) / deposit * 100
-    phase_pct    = min(100, profit_pct / account["target_pct"] * 100)
+    # Estimated pass date at current pace
+    if avg_daily > 0 and remaining > 0:
+        days_left_cur = remaining / avg_daily
+        pass_date_cur = date.today() + timedelta(days=int(days_left_cur) + 1)
+    elif remaining <= 0:
+        days_left_cur = 0
+        pass_date_cur = date.today()
+    else:
+        days_left_cur = 999
+        pass_date_cur = None
+
+    # With 3-symbol deployment estimate (×3 opportunities, ×1.33 risk)
+    est_3sym_daily = avg_daily * 3.5          # 3 symbols + more signals
+    if est_3sym_daily > 0 and remaining > 0:
+        days_left_3sym = remaining / est_3sym_daily
+        pass_date_3sym = date.today() + timedelta(days=int(days_left_3sym) + 1)
+    elif remaining <= 0:
+        days_left_3sym = 0
+        pass_date_3sym = date.today()
+    else:
+        days_left_3sym = 999
+        pass_date_3sym = None
+
+    # ── Drawdown / prop firm ───────────────────────────────────────────────────
+    dd_pct     = max(0, (deposit - balance) / deposit * 100)
+    daily_dd   = dd_pct
+    daily_used = min(100, daily_dd / account["max_daily"] * 100)
+    total_used = min(100, dd_pct   / account["max_total"] * 100)
+
+    profit_pct = (balance - deposit) / deposit * 100
+    phase_pct  = min(100, profit_pct / target_pct * 100)
 
     return dict(
-        trades       = trades,
-        qc_trades    = qc_trades,
-        total        = len(trades),
-        wins         = len(wins),
-        losses       = len(losses),
-        win_rate     = len(wins) / len(trades) * 100 if trades else 0,
-        total_pnl    = total_pnl,
-        today_pnl    = today_pnl,
-        qc_today     = qc_today,
-        qc_total     = len(qc_trades),
-        qc_wins      = len(qc_wins),
-        qc_avg_sc    = qc_avg_sc,
-        avg_win      = gross_win / len(wins) if wins else 0,
-        avg_loss     = gross_los / len(losses) if losses else 0,
-        profit_factor= gross_win / gross_los if gross_los else float("inf"),
-        gross_win    = gross_win,
-        gross_loss   = gross_los,
-        daily        = dict(daily),
-        dd_pct       = dd_pct,
-        daily_dd_pct = daily_dd,
-        daily_used   = daily_used,
-        total_used   = total_used,
-        profit_pct   = profit_pct,
-        phase_pct    = phase_pct,
-        balance      = balance,
-        deposit      = deposit,
+        trades         = trades,
+        qc_trades      = qc_trades,
+        total          = len(trades),
+        wins           = len(wins),
+        losses         = len(losses),
+        win_rate       = len(wins) / len(trades) * 100 if trades else 0,
+        total_pnl      = total_pnl,
+        today_pnl      = today_pnl,
+        qc_today       = qc_today,
+        qc_total       = len(qc_trades),
+        qc_wins        = len(qc_wins),
+        qc_avg_sc      = qc_avg_sc,
+        avg_win        = gross_win / len(wins)   if wins   else 0,
+        avg_loss       = gross_los / len(losses) if losses else 0,
+        profit_factor  = gross_win / gross_los   if gross_los else float("inf"),
+        gross_win      = gross_win,
+        gross_loss     = gross_los,
+        daily          = dict(daily),
+        days_active    = days_active,
+        avg_daily      = avg_daily,
+        target_profit  = target_profit,
+        remaining      = remaining,
+        req_5d         = req_5d,
+        req_10d        = req_10d,
+        days_left_cur  = days_left_cur,
+        pass_date_cur  = pass_date_cur,
+        days_left_3sym = days_left_3sym,
+        pass_date_3sym = pass_date_3sym,
+        dd_pct         = dd_pct,
+        daily_dd_pct   = daily_dd,
+        daily_used     = daily_used,
+        total_used     = total_used,
+        profit_pct     = profit_pct,
+        phase_pct      = phase_pct,
+        balance        = balance,
+        deposit        = deposit,
     )
 
 def _extract_scores(qc_trades: list) -> float:
@@ -184,92 +220,60 @@ def _extract_scores(qc_trades: list) -> float:
 #  PARAMETER OPTIMIZER
 # ══════════════════════════════════════════════════════════════════════════════
 
-CURRENT = dict(
-    risk_pct      = 0.75,
-    min_score     = 0.62,
+DEPLOYED = dict(
+    risk_pct      = 1.00,
+    min_score     = 0.58,
     sl_atr_mult   = 1.5,
-    tp_atr_mult   = 3.0,
-    trail_atr     = 1.0,
+    tp_atr_mult   = 3.5,
+    trail_atr     = 0.8,
     max_positions = 3,
-    start_hour    = 2,
+    start_hour    = 1,
     end_hour      = 21,
-    symbols       = "EURUSD only",
 )
 
-def param_table(stats: dict) -> Table:
-    """Generates a ranked parameter recommendation table."""
-    deposit     = stats["deposit"]
-    avg_qc_pnl  = (stats["qc_today"] / max(1, stats["qc_total"])
-                   if stats["qc_total"] else 545.30)
-    trades_pd   = max(1, stats["qc_total"])   # QuantCore trades per day (approx)
+def panel_deployed(stats: dict) -> Panel:
+    """Shows the current deployed .set file params + symbol checklist."""
+    from rich.columns import Columns
 
-    t = Table(
-        title="[bold yellow]⚙  PARAMETER OPTIMIZER — What to Change[/]",
-        box=box.SIMPLE_HEAD, show_lines=True,
-        title_style="bold yellow", header_style="bold cyan",
-    )
-    t.add_column("Parameter",       style="bold white", width=22)
-    t.add_column("Current",         style="dim white",  width=10)
-    t.add_column("→ Recommended",   style="bold green", width=16)
-    t.add_column("Expected Impact",               width=36)
-    t.add_column("Priority",        width=10)
-
+    # Left: deployed params
+    pt = Table(box=box.SIMPLE, show_header=False, padding=(0, 2), expand=False)
+    pt.add_column("Param",  style="dim", width=22)
+    pt.add_column("Value",  style="bold green", width=10)
     rows = [
-        # (param, current, recommended, impact_text, priority)
-        (
-            "Inp_RiskPerTrade",
-            f"{CURRENT['risk_pct']:.2f}%",
-            "1.00%",
-            f"+33% per trade  ≈ +${avg_qc_pnl*0.33:,.0f} per signal",
-            "[bold red]🔥 HIGH[/]",
-        ),
-        (
-            "Add GBPUSD chart",
-            "—",
-            "Drag EA on H1",
-            f"+{avg_qc_pnl:,.0f} extra/day  (no param change)",
-            "[bold red]🔥 HIGH[/]",
-        ),
-        (
-            "Add XAUUSD chart",
-            "—",
-            "Drag EA on H1",
-            f"+{avg_qc_pnl:,.0f} extra/day  (Gold moves 3–5×)",
-            "[bold red]🔥 HIGH[/]",
-        ),
-        (
-            "Inp_MinScore",
-            f"{CURRENT['min_score']:.2f}",
-            "0.58",
-            "~50% more signals  slight quality trade-off",
-            "[yellow]⚡ MED[/]",
-        ),
-        (
-            "Inp_Trail_ATR",
-            f"{CURRENT['trail_atr']:.1f}",
-            "0.80",
-            "Trails tighter  exits later in winning moves",
-            "[yellow]⚡ MED[/]",
-        ),
-        (
-            "Inp_TP_ATR_Mult",
-            f"{CURRENT['tp_atr_mult']:.1f}",
-            "3.5",
-            "+17% on TP hits  fewer TPs struck, bigger wins",
-            "[yellow]⚡ MED[/]",
-        ),
-        (
-            "Inp_StartHour",
-            f"{CURRENT['start_hour']}:00",
-            "1:00",
-            "Catch Tokyo/London overlap  +1 h window",
-            "[dim]💡 LOW[/]",
-        ),
+        ("Inp_RiskPerTrade",  f"{DEPLOYED['risk_pct']:.2f}%"),
+        ("Inp_MinScore",      f"{DEPLOYED['min_score']:.2f}"),
+        ("Inp_TP_ATR_Mult",   f"{DEPLOYED['tp_atr_mult']:.1f}×"),
+        ("Inp_Trail_ATR",     f"{DEPLOYED['trail_atr']:.1f}×"),
+        ("Inp_SL_ATR_Mult",   f"{DEPLOYED['sl_atr_mult']:.1f}×"),
+        ("Inp_MaxPositions",  f"{DEPLOYED['max_positions']}"),
+        ("Trading hours",     f"{DEPLOYED['start_hour']:02d}:00 – {DEPLOYED['end_hour']:02d}:00"),
+        ("Max daily loss",    "4.5%  (GoatFunded 5%)"),
+        ("Max total loss",    "9.0%  (GoatFunded 10%)"),
     ]
-    for r in rows:
-        t.add_row(*r)
+    for r, v in rows:
+        pt.add_row(r, v)
 
-    return t
+    # Right: symbol checklist
+    ct = Table(box=box.SIMPLE, show_header=False, padding=(0, 2), expand=False)
+    ct.add_column("Status", width=4)
+    ct.add_column("Action", style="white", width=32)
+    checklist = [
+        ("[bold green]✅[/]", "EURUSD.x H1 — running"),
+        ("[bold yellow]⬜[/]", "GBPUSD.x H1 — drag EA + load .set"),
+        ("[bold yellow]⬜[/]", "XAUUSD.x H1 — drag EA + load .set"),
+        ("[dim]──[/]", ""),
+        ("[dim]  [/]", "Navigator → Expert Advisors"),
+        ("[dim]  [/]", "Drag QuantCore_AI_EA onto chart"),
+        ("[dim]  [/]", "Properties → Load → .set file"),
+        ("[dim]  [/]", "Confirm green Algo Trading ✓"),
+    ]
+    for s, a in checklist:
+        ct.add_row(s, a)
+
+    from rich.columns import Columns
+    inner = Columns([pt, ct], expand=True)
+    return Panel(inner, title="[bold green]⚙  DEPLOYED SETTINGS  +  MT5 CHECKLIST[/]",
+                 border_style="green", padding=(0, 1))
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  RICH PANELS
@@ -282,8 +286,8 @@ def _bar(pct: float, width: int = 20, color: str = "green") -> str:
     return f"[{c}]{bar}[/]  {pct:.1f}%"
 
 def panel_account(acc: dict, stats: dict) -> Panel:
-    gain = stats["balance"] - stats["deposit"]
-    gain_pct = stats["profit_pct"]
+    gain      = stats["balance"] - stats["deposit"]
+    gain_pct  = stats["profit_pct"]
     today_abs = stats["today_pnl"]
     today_pct = today_abs / stats["deposit"] * 100
 
@@ -294,21 +298,33 @@ def panel_account(acc: dict, stats: dict) -> Panel:
     lines.append(f"{acc['broker']}\n", style="white")
     lines.append(f"  Deposit   ", style="dim")
     lines.append(f"${stats['deposit']:>12,.2f}\n", style="white")
-    lines.append(f"  Balance   ", style="dim")
     c = "green" if gain >= 0 else "red"
+    lines.append(f"  Balance   ", style="dim")
     lines.append(f"${stats['balance']:>12,.2f}\n", style=f"bold {c}")
     lines.append(f"  Net P&L   ", style="dim")
     lines.append(f"${gain:>+12,.2f}  ({gain_pct:+.2f}%)\n", style=f"bold {c}")
-    lines.append(f"  Today     ", style="dim")
     tc = "green" if today_abs >= 0 else "red"
+    lines.append(f"  Today     ", style="dim")
     lines.append(f"${today_abs:>+12,.2f}  ({today_pct:+.2f}%)\n", style=f"bold {tc}")
+
     lines.append(f"\n  Phase Target  {acc['target_pct']:.0f}%  ", style="dim")
     lines.append(f"{_bar(stats['phase_pct'], 16, 'green')}\n")
-    needed = stats["deposit"] * acc["target_pct"] / 100 - gain
-    if needed > 0:
-        lines.append(f"  Remaining     ${needed:,.2f} to pass\n", style="dim yellow")
+
+    if stats["remaining"] > 0:
+        lines.append(f"  Remaining     ", style="dim")
+        lines.append(f"${stats['remaining']:,.2f}  to pass\n", style="bold yellow")
+        lines.append(f"  Avg/day       ", style="dim")
+        lines.append(f"${stats['avg_daily']:,.2f}  ({stats['days_active']} days)\n", style="white")
+        if stats["pass_date_cur"]:
+            lines.append(f"  Pass date     ", style="dim")
+            lines.append(f"{stats['pass_date_cur'].strftime('%d %b')}  "
+                         f"(~{int(stats['days_left_cur'])+1} days, 1 symbol)\n", style="yellow")
+        if stats["pass_date_3sym"]:
+            lines.append(f"  With 3 syms   ", style="dim")
+            lines.append(f"{stats['pass_date_3sym'].strftime('%d %b')}  "
+                         f"(~{int(stats['days_left_3sym'])+1} days) 🚀\n", style="bold green")
     else:
-        lines.append(f"  TARGET REACHED — PASS NOW! 🎉\n", style="bold green")
+        lines.append(f"  🎉 TARGET REACHED — SUBMIT FOR REVIEW!\n", style="bold green blink")
 
     return Panel(lines, title="[bold cyan]💰 ACCOUNT[/]", border_style="cyan", padding=(0,1))
 
@@ -409,29 +425,47 @@ def panel_daily_pnl(stats: dict) -> Panel:
 
     return Panel(t, title="[bold blue]📅 DAILY P&L[/]", border_style="blue", padding=(0,0))
 
-def panel_impact(stats: dict) -> Panel:
-    """Shows expected daily profit under current vs recommended settings."""
-    deposit = stats["deposit"]
-    avg_qc  = stats["qc_today"] if stats["qc_today"] > 0 else 545.30
-    avg_win = stats["avg_win"]  if stats["avg_win"]  > 0 else 545.30
-    wr      = 0.65   # realistic win rate with tuned params
-
+def panel_countdown(stats: dict, acc: dict) -> Panel:
+    """Mission countdown — how many days / how much per day to pass."""
     lines = Text()
-    lines.append("  CURRENT SETUP\n", style="bold dim")
-    est_now = avg_qc * 1 * wr  # 1 signal/day, 65% win
-    lines.append(f"  1 symbol  ×  ~1 trade/day  ×  65% WR\n", style="dim")
-    lines.append(f"  ≈ ${est_now:,.0f} — ${avg_qc:,.0f} / day\n\n", style="bold white")
 
-    lines.append("  WITH RECOMMENDATIONS\n", style="bold green")
-    est_rec = avg_qc * 1.33 * 3 * 2.5 * wr   # 33% bigger, 3 symbols, 2.5× signals
-    lines.append(f"  3 symbols  ×  ~2.5 signals/symbol  ×  risk 1%\n", style="dim")
-    lines.append(f"  ≈ [bold green]${est_rec:,.0f} — ${est_rec*1.4:,.0f} / day[/]\n\n")
+    remaining  = stats["remaining"]
+    avg_daily  = stats["avg_daily"]
+    deposit    = stats["deposit"]
 
-    days_to_pass = max(1, deposit * 0.08 / max(est_rec, 1))   # 8% target
-    lines.append(f"  Phase target (8%) at avg ${est_rec:,.0f}/day:\n", style="dim")
-    lines.append(f"  ≈ [bold yellow]{days_to_pass:.0f} trading days to pass[/]\n")
+    # Required pace to hit target in 5 / 10 / 20 trading days
+    lines.append("  To pass in…\n", style="bold dim")
+    for days, label in [(5, "5 days "), (10, "10 days"), (20, "20 days")]:
+        req = remaining / days if remaining > 0 else 0
+        pct = req / deposit * 100
+        c   = "bold green" if req <= avg_daily * 1.5 else "yellow" if req <= avg_daily * 3 else "dim red"
+        lines.append(f"    {label}  ", style="dim")
+        lines.append(f"${req:>8,.0f}/day  ({pct:.2f}%)\n", style=c)
 
-    return Panel(lines, title="[bold yellow]🚀 PROFIT IMPACT ESTIMATE[/]", border_style="yellow", padding=(0,1))
+    lines.append(f"\n  Your actual avg  ", style="dim")
+    ac = "bold green" if avg_daily > 0 else "red"
+    lines.append(f"${avg_daily:>8,.0f}/day\n", style=ac)
+
+    # Current-pace pass date
+    lines.append(f"\n  At current pace   ", style="dim")
+    if stats["pass_date_cur"]:
+        lines.append(f"{stats['pass_date_cur'].strftime('%d %b %Y')}", style="yellow")
+        lines.append(f"  (~{int(stats['days_left_cur'])+1} days)\n")
+    else:
+        lines.append("N/A\n", style="dim")
+
+    # 3-symbol pass date
+    lines.append(f"  With 3 symbols    ", style="dim")
+    if stats["pass_date_3sym"]:
+        lines.append(f"{stats['pass_date_3sym'].strftime('%d %b %Y')}", style="bold green")
+        lines.append(f"  (~{int(stats['days_left_3sym'])+1} days) 🚀\n")
+
+    # Daily target bar — how close today is to what's needed for 10-day pace
+    needed_pct = min(100, stats["today_pnl"] / max(stats["req_10d"], 1) * 100) if stats["req_10d"] > 0 else 100
+    lines.append(f"\n  Today vs 10-day target  ${stats['req_10d']:,.0f}\n", style="dim")
+    lines.append(f"  {_bar(needed_pct, 22, 'green')}\n")
+
+    return Panel(lines, title="[bold yellow]🎯 PHASE-1 COUNTDOWN[/]", border_style="yellow", padding=(0,1))
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN RENDER
@@ -454,16 +488,16 @@ def render(account: dict, trades: list) -> None:
 
     console.print()
 
-    # Row 2: Daily P&L | Impact Estimate
+    # Row 2: Daily P&L | Phase-1 Countdown
     console.print(Columns([
         panel_daily_pnl(stats),
-        panel_impact(stats),
+        panel_countdown(stats, account),
     ], equal=True, expand=True))
 
     console.print()
 
-    # Row 3: Parameter optimizer (full width)
-    console.print(param_table(stats))
+    # Row 3: Deployed settings + MT5 checklist (full width)
+    console.print(panel_deployed(stats))
 
     console.print()
 
