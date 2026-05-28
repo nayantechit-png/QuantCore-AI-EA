@@ -1,331 +1,281 @@
 //+------------------------------------------------------------------+
 //|  QuantCore_Dashboard.mq5                                         |
-//|  Live overlay panel — draws directly on the MT5 chart            |
+//|  Live overlay panel — TOP-LEFT corner of the MT5 chart           |
 //|  Shows: Account · Prop Firm Safety · Phase-1 · Signal Engine     |
 //|                                                                  |
 //|  Install:  Copy to  MQL5/Indicators/                             |
-//|  Compile:  F7 in MetaEditor                                      |
-//|  Attach:   Drag onto any QuantCore chart (EURUSD / GBPUSD /      |
-//|            XAUUSD H1).  Panel appears in top-right corner.       |
+//|  Compile:  F7 in MetaEditor (should show 0 errors, 0 warnings)   |
+//|  Attach:   Drag onto EURUSD / GBPUSD / XAUUSD H1 chart           |
 //+------------------------------------------------------------------+
 #property copyright   "QuantCore AI EA"
-#property version     "1.00"
+#property version     "2.00"
 #property indicator_chart_window
 #property indicator_plots 0
 
 //── Inputs ──────────────────────────────────────────────────────────
-input double  Inp_Deposit      = 100000.0;   // Starting deposit ($)
-input double  Inp_TargetPct    = 8.0;        // Phase target % (GoatFunded = 8)
-input double  Inp_MaxDaily     = 5.0;        // Broker daily loss limit %
-input double  Inp_MaxTotal     = 10.0;       // Broker total DD limit %
-input double  Inp_EADailyStop  = 4.5;        // EA daily stop %
-input double  Inp_EATotalStop  = 9.0;        // EA total stop %
-input int     Inp_RSI_Period   = 14;         // RSI period
-input int     Inp_ATR_Period   = 14;         // ATR period
-input int     Inp_EMA_Fast     = 20;         // Fast EMA
-input int     Inp_EMA_Slow     = 200;        // Slow EMA
-input int     PanelX           = 10;         // Panel X offset (right edge)
-input int     PanelY           = 30;         // Panel Y offset (top)
-input int     FontSize         = 8;          // Font size
-input string  FontName         = "Courier New"; // Font
+input double Inp_Deposit     = 100000.0;  // Starting deposit ($)
+input double Inp_TargetPct   = 8.0;       // Phase target % (GoatFunded)
+input double Inp_MaxDaily    = 5.0;       // Broker daily loss limit %
+input double Inp_MaxTotal    = 10.0;      // Broker total DD limit %
+input double Inp_EADailyStop = 4.5;       // EA daily stop %
+input double Inp_EATotalStop = 9.0;       // EA total stop %
+input int    Inp_RSI_Period  = 14;        // RSI period
+input int    Inp_ATR_Period  = 14;        // ATR period
+input int    Inp_EMA_Fast    = 20;        // Fast EMA period
+input int    Inp_EMA_Slow    = 200;       // Slow EMA period
+input int    PanelLeft       = 5;         // Distance from left edge (px)
+input int    PanelTop        = 25;        // Distance from top edge  (px)
+input int    FontSize        = 9;         // Font size
+input string FontFace        = "Courier New";
 
-//── Colours ─────────────────────────────────────────────────────────
-#define C_BG        C'10,14,26'       // near-black navy
-#define C_BG2       C'15,21,37'       // card background
-#define C_BORDER    C'30,45,74'       // border
-#define C_ACCENT    C'0,212,255'      // cyan
-#define C_GREEN     C'0,230,118'      // profit green
-#define C_RED       C'255,23,68'      // loss red
-#define C_YELLOW    C'255,215,64'     // warning yellow
-#define C_DIM       C'90,106,138'     // dimmed text
-#define C_WHITE     C'224,232,255'    // body text
+//── Layout constants ─────────────────────────────────────────────────
+#define PFX      "QCD_"    // object name prefix
+#define PANEL_W  268        // panel width  (px)
+#define LH       15         // line height  (px)
+#define PX       8          // inner left padding
 
-//── Panel sizing ────────────────────────────────────────────────────
-#define PANEL_W     260
-#define LINE_H      16
-#define PAD         8
+//── Colours ──────────────────────────────────────────────────────────
+#define C_BG     C'10,14,26'
+#define C_BG2    C'18,26,46'
+#define C_BORDER C'40,65,110'
+#define C_ACCENT C'0,212,255'
+#define C_GREEN  C'0,220,100'
+#define C_RED    C'255,60,80'
+#define C_YELLOW C'255,210,50'
+#define C_WHITE  C'210,225,255'
+#define C_DIM    C'85,105,145'
 
-//── Object name prefix ──────────────────────────────────────────────
-#define PFX  "QC_DASH_"
-
-//── Global state ────────────────────────────────────────────────────
-int g_totalLines = 0;
+//── Global: line counter used across Draw* calls ─────────────────────
+int g_line = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   EventSetTimer(5);
    DrawPanel();
-   EventSetTimer(5);          // refresh every 5 s
    return INIT_SUCCEEDED;
   }
+void OnDeinit(const int) { EventKillTimer(); Wipe(); }
+void OnTimer()           { DrawPanel(); }
+int  OnCalculate(const int rates_total,const int,const datetime&,
+                 const double&,const double&,const double&,
+                 const double&,const long&,const long&,const int&)
+  { DrawPanel(); return rates_total; }
 
 //+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-  {
-   EventKillTimer();
-   DeletePanel();
-  }
-
-//+------------------------------------------------------------------+
-int OnCalculate(const int rates_total,
-                const int prev_calculated,
-                const datetime &time[],
-                const double   &open[],
-                const double   &high[],
-                const double   &low[],
-                const double   &close[],
-                const long     &tick_volume[],
-                const long     &volume[],
-                const int      &spread[])
-  {
-   DrawPanel();
-   return rates_total;
-  }
-
-//+------------------------------------------------------------------+
-void OnTimer() { DrawPanel(); }
-
-//+------------------------------------------------------------------+
-//  MAIN DRAW ROUTINE
+//  MAIN DRAW
 //+------------------------------------------------------------------+
 void DrawPanel()
   {
-   //── Account metrics ─────────────────────────────────────────────
-   double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
-   double equity    = AccountInfoDouble(ACCOUNT_EQUITY);
-   double deposit   = Inp_Deposit;
+   //── live data ──────────────────────────────────────────────────
+   double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity   = AccountInfoDouble(ACCOUNT_EQUITY);
+   double deposit  = Inp_Deposit;
+   double todayPnl = GetTodayPnl();
+   double netPnl   = balance - deposit;
+   double netPct   = netPnl  / deposit * 100.0;
+   double ddPct    = MathMax(0.0, (deposit - equity) / deposit * 100.0);
+   double dailyDD  = ddPct;   // simplified (no intraday peak tracking)
 
-   // Today's closed P&L
-   double todayPnl  = GetTodayPnl();
-   double todayPct  = todayPnl / deposit * 100.0;
-
-   // Drawdown
-   double ddPct     = MathMax(0, (deposit - equity) / deposit * 100.0);
-   double dailyDD   = MathMax(0, (deposit - equity) / deposit * 100.0); // simplified
-
-   // Phase progress
-   double netPnl    = balance - deposit;
-   double netPct    = netPnl / deposit * 100.0;
    double target    = deposit * Inp_TargetPct / 100.0;
-   double remaining = MathMax(0, target - netPnl);
-   double phasePct  = MathMin(100, netPct / Inp_TargetPct * 100.0);
+   double remaining = MathMax(0.0, target - netPnl);
+   double phasePct  = MathMin(100.0, netPct / Inp_TargetPct * 100.0);
+   double avgDay    = (todayPnl > 1.0) ? todayPnl : 545.30;
+   int    daysCur   = (remaining > 0 && avgDay > 0) ? (int)MathCeil(remaining / avgDay)        : 0;
+   int    days3sym  = (remaining > 0 && avgDay > 0) ? (int)MathCeil(remaining / (avgDay*3.5))  : 0;
 
-   // Days to pass (at today's pace)
-   double avgDay    = (todayPnl > 0) ? todayPnl : 545.30; // fallback to last known
-   int    daysToCur = (remaining > 0 && avgDay > 0) ? (int)MathCeil(remaining / avgDay) : 0;
-   int    days3sym  = (remaining > 0 && avgDay > 0) ? (int)MathCeil(remaining / (avgDay * 3.5)) : 0;
-
-   //── Signal metrics ───────────────────────────────────────────────
    double atrVal  = iATR(_Symbol, _Period, Inp_ATR_Period);
    double rsiVal  = iRSI(_Symbol, _Period, Inp_RSI_Period, PRICE_CLOSE);
-   double emaFast = iMA(_Symbol, _Period, Inp_EMA_Fast,  0, MODE_EMA, PRICE_CLOSE);
-   double emaSlow = iMA(_Symbol, _Period, Inp_EMA_Slow,  0, MODE_EMA, PRICE_CLOSE);
-   double close0  = iClose(_Symbol, _Period, 0);
+   double emaF    = iMA (_Symbol, _Period, Inp_EMA_Fast, 0, MODE_EMA, PRICE_CLOSE);
+   double emaS    = iMA (_Symbol, _Period, Inp_EMA_Slow, 0, MODE_EMA, PRICE_CLOSE);
+   double px      = iClose(_Symbol, _Period, 0);
 
-   string trendStr  = (close0 > emaFast && emaFast > emaSlow) ? "BULL  ▲" :
-                      (close0 < emaFast && emaFast < emaSlow) ? "BEAR  ▼" : "MIXED ↔";
-   color  trendCol  = (close0 > emaFast && emaFast > emaSlow) ? C_GREEN :
-                      (close0 < emaFast && emaFast < emaSlow) ? C_RED   : C_YELLOW;
+   bool   bull    = (px > emaF && emaF > emaS);
+   bool   bear    = (px < emaF && emaF < emaS);
+   string trendS  = bull ? "BULL  ▲" : bear ? "BEAR  ▼" : "MIXED ↔";
+   color  trendC  = bull ? C_GREEN : bear ? C_RED : C_YELLOW;
 
-   // Open positions on this symbol
-   int    openPos   = 0;
-   double openPnl   = 0;
-   for(int i = 0; i < PositionsTotal(); i++)
-     {
-      if(PositionGetTicket(i) > 0)
-        {
-         if(PositionGetString(POSITION_SYMBOL) == _Symbol)
-           {
-            openPos++;
-            openPnl += PositionGetDouble(POSITION_PROFIT);
-           }
-        }
-     }
+   int    openPos = 0; double openPnl = 0;
+   for(int i=0;i<PositionsTotal();i++)
+      if(PositionGetTicket(i)>0 && PositionGetString(POSITION_SYMBOL)==_Symbol)
+        { openPos++; openPnl += PositionGetDouble(POSITION_PROFIT); }
 
-   //── Safety flags ────────────────────────────────────────────────
-   double dailyUsedPct  = (dailyDD / Inp_MaxDaily)   * 100.0;
-   double totalUsedPct  = (ddPct   / Inp_MaxTotal)   * 100.0;
-   string safetyStatus  = (dailyUsedPct < 50 && totalUsedPct < 50) ? "SAFE  ✓" :
-                          (dailyUsedPct < 80 && totalUsedPct < 80) ? "WATCH !" : "DANGER ✗";
-   color  safetyCol     = (dailyUsedPct < 50 && totalUsedPct < 50) ? C_GREEN :
-                          (dailyUsedPct < 80 && totalUsedPct < 80) ? C_YELLOW: C_RED;
+   double dlyUsed = MathMin(100.0, dailyDD / Inp_MaxDaily  * 100.0);
+   double totUsed = MathMin(100.0, ddPct   / Inp_MaxTotal  * 100.0);
+   bool   safe    = (dlyUsed < 50 && totUsed < 50);
+   bool   warn    = (!safe && dlyUsed < 80 && totUsed < 80);
+   string safeS   = safe ? "SAFE  ✓" : warn ? "WATCH !" : "DANGER ✗";
+   color  safeC   = safe ? C_GREEN   : warn ? C_YELLOW  : C_RED;
 
-   //── Build panel lines ────────────────────────────────────────────
-   int ln = 0;                        // line counter
-   int x  = PanelX;
-   int y0 = PanelY;
+   //── reset line counter and (re)draw ────────────────────────────
+   g_line = 0;
 
-   // Background
-   DrawRect("_BG", x, y0, PANEL_W, 42 * LINE_H, C_BG, C_BORDER);
+   // ── background panel (drawn first so it sits behind text) ──────
+   int totalRows = 38;  // estimate; background resized at end
+   Rect("_bg", 0, 0, PANEL_W, totalRows * LH + 6, C_BG, C_BORDER, true);
 
-   // ── HEADER ──────────────────────────────────────────────────────
-   DrawRect("_HDR", x, y0, PANEL_W, LINE_H + 8, C_BG2, C_ACCENT);
-   DrawTxt("_H1",  "⚡ QUANTCORE AI EA",  x+PAD,   y0+4,   C_ACCENT, FontSize+1, true);
-   DrawTxt("_H2",  "GoatFunded  Phase-1", x+PAD,   y0+16,  C_DIM,    FontSize-1, false);
-   ln = 2;
+   // ── accent top bar ─────────────────────────────────────────────
+   Rect("_hdr", 0, 0, PANEL_W, LH + 6, C_BG2, C_ACCENT, false);
+   Lbl("_h1", "⚡ QUANTCORE AI EA", PX, 4, C_ACCENT, FontSize+1, true);
+   Lbl("_h2", "GoatFunded  Phase-1", PX, LH+4, C_DIM, FontSize-2, false);
+   g_line = 3;
 
-   // ── SEPARATOR ───────────────────────────────────────────────────
-   DrawSep(ln++);
+   Sep("s0");
 
-   // ── ACCOUNT ─────────────────────────────────────────────────────
-   DrawTxt("_SBA",  "ACCOUNT",          x+PAD, y0+RowY(ln++), C_DIM, FontSize-1, false);
-   DrawKV("BAL",  "Balance",  StringFormat("$%s",  FmtMoney(balance)), (balance >= deposit) ? C_GREEN : C_RED, ln++);
-   DrawKV("EQU",  "Equity",   StringFormat("$%s",  FmtMoney(equity)),  (equity  >= deposit) ? C_GREEN : C_RED, ln++);
-   DrawKV("TPNL", "Today",    StringFormat("%s$%s  (%+.2f%%)",
-                              (todayPnl>=0)?"+":"-", FmtMoney(MathAbs(todayPnl)), todayPct),
-                              (todayPnl >= 0) ? C_GREEN : C_RED, ln++);
-   DrawKV("NET",  "Net P&L",  StringFormat("%s$%s  (%+.2f%%)",
-                              (netPnl>=0)?"+":"-", FmtMoney(MathAbs(netPnl)), netPct),
-                              (netPnl >= 0) ? C_GREEN : C_RED, ln++);
+   // ── ACCOUNT ────────────────────────────────────────────────────
+   Hdr("a0","ACCOUNT");
+   KV("b1","Balance", "$"+FM(balance),            (balance>=deposit)?C_GREEN:C_RED);
+   KV("b2","Equity",  "$"+FM(equity),             (equity >=deposit)?C_GREEN:C_RED);
+   KV("b3","Today",   PSign(todayPnl)+"$"+FM(MathAbs(todayPnl))
+                      +" ("+DP(todayPnl/deposit*100)+"%%)",
+                      (todayPnl>=0)?C_GREEN:C_RED);
+   KV("b4","Net P&L", PSign(netPnl)+"$"+FM(MathAbs(netPnl))
+                      +" ("+DP(netPct)+"%%)",
+                      (netPnl>=0)?C_GREEN:C_RED);
+   if(openPos>0)
+      KV("b5","Open",  IntegerToString(openPos)+" pos  "
+                       +PSign(openPnl)+"$"+DP(MathAbs(openPnl)),
+                       (openPnl>=0)?C_GREEN:C_RED);
 
-   if(openPos > 0)
-      DrawKV("OPN","Open",  StringFormat("%d pos  %s$%.2f",
-             openPos, (openPnl>=0)?"+":"-", MathAbs(openPnl)),
-             (openPnl>=0) ? C_GREEN : C_RED, ln++);
-
-   // ── SEPARATOR ───────────────────────────────────────────────────
-   DrawSep(ln++);
+   Sep("s1");
 
    // ── PROP FIRM SAFETY ────────────────────────────────────────────
-   DrawTxt("_SPS", "PROP FIRM  " + safetyStatus, x+PAD, y0+RowY(ln++), safetyCol, FontSize-1, true);
-   DrawBarLine("DLY", "Daily DD",  dailyDD,  Inp_MaxDaily,  Inp_EADailyStop, ln++);
-   DrawBarLine("TOT", "Total DD",  ddPct,    Inp_MaxTotal,  Inp_EATotalStop,  ln++);
+   Hdr2("pf","PROP FIRM   "+safeS, safeC);
+   BarRow("pd","Daily DD",  dailyDD, Inp_MaxDaily);
+   BarRow("pt","Total DD",  ddPct,   Inp_MaxTotal);
 
-   // ── SEPARATOR ───────────────────────────────────────────────────
-   DrawSep(ln++);
+   Sep("s2");
 
    // ── PHASE PROGRESS ──────────────────────────────────────────────
-   DrawTxt("_SP1",  StringFormat("PHASE-1 TARGET  %.0f%%", Inp_TargetPct), x+PAD, y0+RowY(ln++), C_DIM, FontSize-1, false);
-   DrawProgressLine("PH1", phasePct, ln++);
-   DrawKV("PHR", "Remaining", StringFormat("$%s", FmtMoney(remaining)), C_YELLOW, ln++);
-   DrawKV("PH2", "1 symbol",  StringFormat("~%d days", daysToCur),  C_WHITE,  ln++);
-   DrawKV("PH3", "3 symbols", StringFormat("~%d days  ★", days3sym), C_GREEN,  ln++);
+   Hdr("ph0",StringFormat("PHASE-1 TARGET  %.0f%%",Inp_TargetPct));
+   BarRow("ph1","Progress", phasePct, 100.0);
+   KV("ph2","Remaining","$"+FM(remaining),                C_YELLOW);
+   KV("ph3","1 symbol", "~"+IntegerToString(daysCur)+" days",   C_WHITE);
+   KV("ph4","3 symbols","~"+IntegerToString(days3sym)+" days  ★",C_GREEN);
 
-   // ── SEPARATOR ───────────────────────────────────────────────────
-   DrawSep(ln++);
+   Sep("s3");
 
    // ── SIGNAL ENGINE ───────────────────────────────────────────────
-   DrawTxt("_SSE",  "SIGNAL ENGINE", x+PAD, y0+RowY(ln++), C_DIM, FontSize-1, false);
-   DrawKV("SYM",  "Symbol",   _Symbol,                           C_ACCENT, ln++);
-   DrawKV("ATR",  "ATR",      StringFormat("%.5f", atrVal),      C_WHITE,  ln++);
-   DrawKV("RSI",  "RSI(14)",  StringFormat("%.1f", rsiVal),
-          (rsiVal > 70) ? C_RED : (rsiVal < 30) ? C_GREEN : C_WHITE, ln++);
-   DrawKV("TRD",  "Trend",    trendStr,                          trendCol, ln++);
-   DrawKV("EF",   "EMA20",    StringFormat("%.5f", emaFast),     C_DIM,    ln++);
-   DrawKV("ES",   "EMA200",   StringFormat("%.5f", emaSlow),     C_DIM,    ln++);
+   Hdr("se0","SIGNAL ENGINE");
+   KV("se1","Symbol",  _Symbol,                           C_ACCENT);
+   KV("se2","ATR",     StringFormat("%.5f",atrVal),       C_WHITE);
+   KV("se3","RSI(14)", StringFormat("%.1f",rsiVal),
+            (rsiVal>70)?C_RED:(rsiVal<30)?C_GREEN:C_WHITE);
+   KV("se4","Trend",   trendS,                            trendC);
+   KV("se5","EMA20",   StringFormat("%.5f",emaF),         C_DIM);
+   KV("se6","EMA200",  StringFormat("%.5f",emaS),         C_DIM);
 
-   // ── SEPARATOR ───────────────────────────────────────────────────
-   DrawSep(ln++);
+   Sep("s4");
 
-   // ── SETTINGS SUMMARY ────────────────────────────────────────────
-   DrawTxt("_SET",  "DEPLOYED SETTINGS", x+PAD, y0+RowY(ln++), C_DIM, FontSize-1, false);
-   DrawKV("SR",   "Risk/trade",  "1.00%",         C_GREEN, ln++);
-   DrawKV("SS",   "Min score",   "0.58",          C_GREEN, ln++);
-   DrawKV("STP",  "TP mult",     "3.5 × ATR",     C_GREEN, ln++);
-   DrawKV("STR",  "Trail",       "0.8 × ATR",     C_GREEN, ln++);
+   // ── DEPLOYED SETTINGS ───────────────────────────────────────────
+   Hdr("ds0","DEPLOYED SETTINGS");
+   KV("ds1","Risk/trade",  "1.00%",       C_GREEN);
+   KV("ds2","Min score",   "0.58",        C_GREEN);
+   KV("ds3","TP mult",     "3.5 × ATR",   C_GREEN);
+   KV("ds4","Trail ATR",   "0.80",        C_GREEN);
+   KV("ds5","Max pos",     "3",           C_WHITE);
 
-   // Resize background to actual content
-   int totalH = y0 + RowY(ln) + LINE_H;
-   ObjectSetInteger(0, PFX+"_BG", OBJPROP_YSIZE, totalH - y0);
+   // resize background to exact content height
+   int bgH = PanelTop + g_line * LH + LH;
+   ObjectSetInteger(0, PFX+"_bg", OBJPROP_YSIZE, bgH - PanelTop);
 
    ChartRedraw(0);
-   g_totalLines = ln;
   }
 
 //+------------------------------------------------------------------+
-//  HELPERS — geometry
+//  PRIMITIVE HELPERS
 //+------------------------------------------------------------------+
-int RowY(int line) { return (2 * LINE_H + 10) + line * LINE_H; }
 
-void DrawSep(int line)
+// Draw filled rectangle
+void Rect(string id, int rx, int ry, int rw, int rh,
+          color bg, color border, bool back)
   {
-   string n = PFX + "_SEP" + IntegerToString(line);
-   int    y = PanelY + RowY(line);
-   if(ObjectFind(0, n) < 0)
-      ObjectCreate(0, n, OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, n, OBJPROP_CORNER,    CORNER_RIGHT_UPPER);
-   ObjectSetInteger(0, n, OBJPROP_XDISTANCE, PanelX);
-   ObjectSetInteger(0, n, OBJPROP_YDISTANCE, y);
-   ObjectSetString (0, n, OBJPROP_TEXT,      StringFormat("%-38s", "─────────────────────────────────"));
-   ObjectSetString (0, n, OBJPROP_FONT,      FontName);
-   ObjectSetInteger(0, n, OBJPROP_FONTSIZE,  FontSize - 2);
-   ObjectSetInteger(0, n, OBJPROP_COLOR,     C_BORDER);
-   ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
+   string n = PFX+id;
+   if(ObjectFind(0,n)<0) ObjectCreate(0,n,OBJ_RECTANGLE_LABEL,0,0,0);
+   ObjectSetInteger(0,n,OBJPROP_CORNER,    CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,n,OBJPROP_XDISTANCE, PanelLeft + rx);
+   ObjectSetInteger(0,n,OBJPROP_YDISTANCE, PanelTop  + ry);
+   ObjectSetInteger(0,n,OBJPROP_XSIZE,     rw);
+   ObjectSetInteger(0,n,OBJPROP_YSIZE,     rh);
+   ObjectSetInteger(0,n,OBJPROP_BGCOLOR,   bg);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,     border);
+   ObjectSetInteger(0,n,OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0,n,OBJPROP_WIDTH,     1);
+   ObjectSetInteger(0,n,OBJPROP_BACK,      back);
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,n,OBJPROP_HIDDEN,    true);
   }
 
-void DrawRect(string id, int x, int y, int w, int h, color bg, color border)
+// Draw text label
+void Lbl(string id, string txt, int lx, int ly, color col, int sz, bool bold)
   {
-   string n = PFX + id;
-   if(ObjectFind(0, n) < 0)
-      ObjectCreate(0, n, OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, n, OBJPROP_CORNER,      CORNER_RIGHT_UPPER);
-   ObjectSetInteger(0, n, OBJPROP_XDISTANCE,   x);
-   ObjectSetInteger(0, n, OBJPROP_YDISTANCE,   y);
-   ObjectSetInteger(0, n, OBJPROP_XSIZE,       w);
-   ObjectSetInteger(0, n, OBJPROP_YSIZE,       h);
-   ObjectSetInteger(0, n, OBJPROP_BGCOLOR,     bg);
-   ObjectSetInteger(0, n, OBJPROP_BORDER_TYPE, BORDER_FLAT);
-   ObjectSetInteger(0, n, OBJPROP_COLOR,       border);
-   ObjectSetInteger(0, n, OBJPROP_WIDTH,       1);
-   ObjectSetInteger(0, n, OBJPROP_BACK,        true);
-   ObjectSetInteger(0, n, OBJPROP_SELECTABLE,  false);
+   string n = PFX+id;
+   if(ObjectFind(0,n)<0) ObjectCreate(0,n,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,n,OBJPROP_CORNER,    CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,n,OBJPROP_XDISTANCE, PanelLeft + lx);
+   ObjectSetInteger(0,n,OBJPROP_YDISTANCE, PanelTop  + ly);
+   ObjectSetString (0,n,OBJPROP_TEXT,      txt);
+   ObjectSetString (0,n,OBJPROP_FONT,      bold ? FontFace+" Bold" : FontFace);
+   ObjectSetInteger(0,n,OBJPROP_FONTSIZE,  sz);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,     col);
+   ObjectSetInteger(0,n,OBJPROP_BACK,      false);
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,n,OBJPROP_HIDDEN,    true);
   }
 
-void DrawTxt(string id, string txt, int x, int y, color col, int sz, bool bold)
+// Current Y for line g_line
+int LY() { return g_line * LH + 4; }
+
+// Separator line
+void Sep(string id)
   {
-   string n = PFX + id;
-   if(ObjectFind(0, n) < 0)
-      ObjectCreate(0, n, OBJ_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, n, OBJPROP_CORNER,    CORNER_RIGHT_UPPER);
-   ObjectSetInteger(0, n, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, n, OBJPROP_YDISTANCE, y);
-   ObjectSetString (0, n, OBJPROP_TEXT,      txt);
-   ObjectSetString (0, n, OBJPROP_FONT,      bold ? FontName + " Bold" : FontName);
-   ObjectSetInteger(0, n, OBJPROP_FONTSIZE,  sz);
-   ObjectSetInteger(0, n, OBJPROP_COLOR,     col);
-   ObjectSetInteger(0, n, OBJPROP_SELECTABLE,false);
+   Lbl("_sep_"+id,
+       "────────────────────────────────",
+       PX, LY(), C_BORDER, FontSize-2, false);
+   g_line++;
+  }
+
+// Section header (dim)
+void Hdr(string id, string txt)
+  {
+   Lbl("_h_"+id, txt, PX, LY(), C_DIM, FontSize-1, false);
+   g_line++;
+  }
+
+// Section header (custom colour)
+void Hdr2(string id, string txt, color col)
+  {
+   Lbl("_h_"+id, txt, PX, LY(), col, FontSize-1, true);
+   g_line++;
   }
 
 // Key-value row
-void DrawKV(string id, string key, string val, color valCol, int line)
+void KV(string id, string key, string val, color vc)
   {
-   int y = PanelY + RowY(line);
-   DrawTxt("_K_"+id, StringFormat("%-12s", key), PanelX + PAD,        y, C_DIM,  FontSize,   false);
-   DrawTxt("_V_"+id, val,                         PanelX + PAD + 100,  y, valCol, FontSize,   true);
+   int y = LY();
+   Lbl("_k_"+id, StringFormat("%-11s",key),  PX,      y, C_DIM, FontSize, false);
+   Lbl("_v_"+id, val,                         PX+110,  y, vc,    FontSize, true);
+   g_line++;
   }
 
-// Mini progress bar
-void DrawProgressLine(string id, double pct, int line)
+// Progress bar row  (val and limit in same unit, e.g. both percent)
+void BarRow(string id, string label, double val, double limit)
   {
-   int    y      = PanelY + RowY(line);
-   int    barW   = PANEL_W - PAD * 2;
-   int    filled = (int)(pct / 100.0 * barW);
-   color  col    = (pct < 60) ? C_ACCENT : (pct < 90) ? C_YELLOW : C_GREEN;
+   int    y      = LY();
+   int    barW   = 120;
+   double ratio  = (limit > 0) ? MathMin(1.0, val / limit) : 0;
+   int    filled = (int)(ratio * 20);          // 20-char bar
+   int    empty  = 20 - filled;
+   color  bc     = (ratio < 0.5) ? C_GREEN : (ratio < 0.8) ? C_YELLOW : C_RED;
 
-   // background track
-   DrawRect("_PBG_"+id, PanelX + PAD, y, barW,    LINE_H - 4, C_BG2,  C_BORDER);
-   // filled portion
-   if(filled > 0)
-      DrawRect("_PFG_"+id, PanelX + PAD, y, filled, LINE_H - 4, col,    col);
-   // pct label
-   DrawTxt("_PLB_"+id, StringFormat("%.1f%%", pct), PanelX + PAD + 4, y + 1, C_WHITE, FontSize - 1, true);
-  }
+   string bar    = "";
+   for(int i=0;i<filled;i++) bar += "█";
+   for(int i=0;i<empty; i++) bar += "░";
 
-// DD progress bar with limit markers
-void DrawBarLine(string id, string label, double val, double brokerLim, double eaLim, int line)
-  {
-   int    y      = PanelY + RowY(line);
-   int    barW   = PANEL_W - PAD * 2 - 110;
-   double pct    = MathMin(100, val / brokerLim * 100.0);
-   int    filled = (int)(pct / 100.0 * barW);
-   color  col    = (pct < 50) ? C_GREEN : (pct < 80) ? C_YELLOW : C_RED;
-
-   DrawTxt("_BLK_"+id, StringFormat("%-9s", label),   PanelX+PAD,        y, C_DIM, FontSize,   false);
-   DrawRect("_BBG_"+id, PanelX+PAD+100, y,     barW,    LINE_H-4, C_BG2,  C_BORDER);
-   if(filled > 0)
-      DrawRect("_BFG_"+id, PanelX+PAD+100, y,  filled,  LINE_H-4, col,    col);
-   DrawTxt("_BVL_"+id, StringFormat("%.2f%%/%.0f%%", val, brokerLim),
-           PanelX+PAD+100+barW+4, y, col, FontSize, false);
+   Lbl("_bk_"+id, StringFormat("%-9s",label), PX,      y, C_DIM, FontSize,   false);
+   Lbl("_bb_"+id, bar,                         PX+90,   y, bc,    FontSize-1, false);
+   Lbl("_bv_"+id, StringFormat("%.1f%%%%",val), PX+220,  y, bc,    FontSize,   true);
+   g_line++;
   }
 
 //+------------------------------------------------------------------+
@@ -333,51 +283,49 @@ void DrawBarLine(string id, string label, double val, double brokerLim, double e
 //+------------------------------------------------------------------+
 double GetTodayPnl()
   {
-   datetime dayStart = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
-   HistorySelect(dayStart, TimeCurrent());
+   datetime dayStart = StringToTime(TimeToString(TimeCurrent(),TIME_DATE));
+   if(!HistorySelect(dayStart, TimeCurrent())) return 0;
    double pnl = 0;
-   int total  = HistoryDealsTotal();
-   for(int i = 0; i < total; i++)
+   int    n   = HistoryDealsTotal();
+   for(int i=0;i<n;i++)
      {
-      ulong ticket = HistoryDealGetTicket(i);
-      if(HistoryDealGetInteger(ticket, DEAL_ENTRY) == DEAL_ENTRY_OUT)
-         pnl += HistoryDealGetDouble(ticket, DEAL_PROFIT)
-              + HistoryDealGetDouble(ticket, DEAL_SWAP)
-              + HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      ulong tkt = HistoryDealGetTicket(i);
+      if(HistoryDealGetInteger(tkt,DEAL_ENTRY)==DEAL_ENTRY_OUT)
+         pnl += HistoryDealGetDouble(tkt,DEAL_PROFIT)
+               +HistoryDealGetDouble(tkt,DEAL_SWAP)
+               +HistoryDealGetDouble(tkt,DEAL_COMMISSION);
      }
    return pnl;
   }
 
 //+------------------------------------------------------------------+
-//  MONEY FORMAT  (1234567.89 → "1,234,567.89")
+//  STRING HELPERS
 //+------------------------------------------------------------------+
-string FmtMoney(double v)
+string FM(double v)   // format money: 103537.08 → "103,537.08"
   {
-   string s   = StringFormat("%.2f", v);
-   int    dot = StringFind(s, ".");
-   string dec = StringSubstr(s, dot);
-   string int_part = StringSubstr(s, 0, dot);
+   string s   = StringFormat("%.2f",v);
+   int    dot = StringFind(s,".");
+   string dec = StringSubstr(s,dot);
+   string ip  = StringSubstr(s,0,dot);
    string out = "";
-   int    len = StringLen(int_part);
-   for(int i = 0; i < len; i++)
-     {
-      if(i > 0 && (len - i) % 3 == 0) out += ",";
-      out += StringSubstr(int_part, i, 1);
-     }
-   return out + dec;
+   int    len = StringLen(ip);
+   for(int i=0;i<len;i++)
+     { if(i>0 && (len-i)%3==0) out+=","; out+=StringSubstr(ip,i,1); }
+   return out+dec;
   }
 
+string DP(double v)   { return StringFormat("%.2f",v); }  // 2 decimal places
+string PSign(double v){ return (v>=0)?"+":"-"; }
+
 //+------------------------------------------------------------------+
-//  DELETE ALL PANEL OBJECTS
+//  WIPE all panel objects on deinit
 //+------------------------------------------------------------------+
-void DeletePanel()
+void Wipe()
   {
-   int total = ObjectsTotal(0, 0, -1);
-   for(int i = total - 1; i >= 0; i--)
+   for(int i=ObjectsTotal(0,0,-1)-1;i>=0;i--)
      {
-      string nm = ObjectName(0, i);
-      if(StringFind(nm, PFX) == 0)
-         ObjectDelete(0, nm);
+      string nm=ObjectName(0,i,0,-1);
+      if(StringFind(nm,PFX)==0) ObjectDelete(0,nm);
      }
    ChartRedraw(0);
   }
