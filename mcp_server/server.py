@@ -513,5 +513,52 @@ def quantcore_optimize_params(
     )
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  MODULE 5 — LSTM FORECASTER
+# ══════════════════════════════════════════════════════════════════════
+
+@mcp.tool(name="quantcore_lstm_forecast",
+          description="Train a 2-layer PyTorch LSTM on price history and predict next-bar direction (BUY/SELL/NEUTRAL) with probability and confidence level.",
+          annotations={"readOnlyHint":True,"openWorldHint":True})
+def quantcore_lstm_forecast(
+    symbol:    Annotated[str,   Field(description="Yahoo Finance symbol e.g. EURUSD=X or GC=F")] = "EURUSD=X",
+    period:    Annotated[str,   Field(description="Training history: 1y 2y 3y")] = "2y",
+    interval:  Annotated[str,   Field(description="Bar interval: 1h 4h 1d")] = "1h",
+    epochs:    Annotated[int,   Field(description="Max training epochs (20-100)")] = 60,
+    model_path:Annotated[Optional[str], Field(description="Load pre-trained .pt file instead of training")] = None,
+) -> str:
+    try:
+        sys.path.insert(0, str(ROOT))
+        from quantcore.strategies.lstm_forecaster import LSTMForecaster
+        f = LSTMForecaster(window=30, epochs=epochs, patience=10)
+        if model_path and Path(model_path).exists():
+            f.load(model_path)
+            prob, dirn, conf = f.predict_next(symbol, interval)
+            lines = [f"## 🧠 LSTM Forecast — {symbol} (pre-trained)\n"]
+        else:
+            r = f.train(symbol, period, interval, verbose=False)
+            prob, dirn, conf = f.predict_next(symbol, interval)
+            lines = [
+                f"## 🧠 LSTM Forecast — {symbol}\n",
+                f"**Training complete** | Test acc: {r['test_acc']}% | "
+                f"Confident bars: {r['confident_pct']}%\n",
+            ]
+        bar = "█"*int(prob*20) + "░"*(20-int(prob*20))
+        icon = "🟢" if dirn=="BUY" else "🔴" if dirn=="SELL" else "⚪"
+        conf_icon = "🔥" if conf=="HIGH" else "⚡" if conf=="MEDIUM" else "💤"
+        lines += [
+            f"|Field|Value|\n|---|---|",
+            f"|Direction|{icon} **{dirn}**|",
+            f"|P(up next bar)|{prob:.4f}  `{bar}`|",
+            f"|Confidence|{conf_icon} {conf}|",
+            f"\n> Use alongside `quantcore_get_signal` — LSTM adds directional conviction when confidence is HIGH.",
+        ]
+        return "\n".join(lines)
+    except ImportError as e:
+        return f"❌ PyTorch not installed in venv: {e}\nRun: mcp_server/.venv/bin/pip install torch"
+    except Exception as e:
+        return f"❌ LSTM error: {e}"
+
+
 if __name__ == "__main__":
     mcp.run(transport="stdio")
