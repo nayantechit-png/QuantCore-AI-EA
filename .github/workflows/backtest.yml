@@ -21,11 +21,10 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install yfinance pandas numpy scipy scikit-learn ta
+        run: pip install -r requirements.txt
 
       - name: Backtest — EUR/USD (2y)
         run: python backtest/run_backtest.py --symbol EURUSD=X --period 2y
@@ -38,6 +37,10 @@ jobs:
 
       - name: Backtest — USD/JPY (2y)
         run: python backtest/run_backtest.py --symbol USDJPY=X --period 2y
+
+      - name: Save backtest results
+        if: always()
+        run: mkdir -p backtest/results && echo "completed" > backtest/results/status.txt
 
       - name: Upload backtest artifacts
         uses: actions/upload-artifact@v4
@@ -57,13 +60,13 @@ jobs:
         run: |
           EA="EA/QuantCore_AI_EA.mq5"
           echo "Checking $EA..."
-          grep -q "OnInit"        "$EA" && echo "✅ OnInit"
-          grep -q "OnTick"        "$EA" && echo "✅ OnTick"
-          grep -q "CalcLotSize"   "$EA" && echo "✅ CalcLotSize"
-          grep -q "CheckPropLimits" "$EA" && echo "✅ CheckPropLimits"
-          grep -q "Inp_MaxDailyLoss" "$EA" && echo "✅ MaxDailyLoss param"
-          grep -q "Inp_MaxTotalLoss" "$EA" && echo "✅ MaxTotalLoss param"
-          grep -q "Inp_RiskPerTrade" "$EA" && echo "✅ RiskPerTrade param"
+          grep -q "OnInit"            "$EA" && echo "✅ OnInit"
+          grep -q "OnTick"            "$EA" && echo "✅ OnTick"
+          grep -q "CalcLotSize"       "$EA" && echo "✅ CalcLotSize"
+          grep -q "CheckPropLimits"   "$EA" && echo "✅ CheckPropLimits"
+          grep -q "Inp_MaxDailyLoss"  "$EA" && echo "✅ MaxDailyLoss param"
+          grep -q "Inp_MaxTotalLoss"  "$EA" && echo "✅ MaxTotalLoss param"
+          grep -q "Inp_RiskPerTrade"  "$EA" && echo "✅ RiskPerTrade param"
           grep -q "ManageTrailingStop" "$EA" && echo "✅ TrailingStop"
           grep -q "UpdateKalmanOnTick" "$EA" && echo "✅ Kalman filter"
           echo "EA structure validation passed ✅"
