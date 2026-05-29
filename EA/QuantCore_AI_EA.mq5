@@ -61,10 +61,13 @@ input group "════ KALMAN FILTER ════"
 input double Inp_KF_Delta       = 0.0001; // Process noise  (smaller = smoother)
 input double Inp_KF_Ve          = 0.001;  // Measurement noise
 
-input group "════ TRADING HOURS (Server Time) ════"
-input int    Inp_StartHour      = 2;      // Session open hour
-input int    Inp_EndHour        = 21;     // Session close hour
-input bool   Inp_CloseFriday    = true;   // Close all positions on Friday 21:00
+input group "════ TRADING SESSIONS (UTC Server Time) ════"
+input bool   Inp_TradeAsia      = true;   // Trade Asian session    (00:00–09:00 UTC)
+input bool   Inp_TradeLondon    = true;   // Trade London session   (07:00–16:00 UTC)
+input bool   Inp_TradeNewYork   = true;   // Trade New York session (13:00–21:00 UTC)
+input bool   Inp_BoostOverlap   = true;   // Lower score during London-NY overlap (peak volume)
+input double Inp_OverlapBoost   = 0.03;   // Score reduction during L-NY overlap (12:00-16:00)
+input bool   Inp_CloseFriday    = true;   // Close all positions on Friday 21:00 UTC
 
 input group "════ SIGNAL WEIGHTS ════"
 input double W_Trend    = 0.30;  // EMA trend weight
@@ -164,6 +167,40 @@ int OnInit()
 
 ENUM_TIMEFRAMES Inp_ConfirmTF() { return PERIOD_H4; }
 
+//──────────────────────────────────────────────────────────────────
+// SESSION HELPERS
+//──────────────────────────────────────────────────────────────────
+
+// Returns true if ANY enabled session is currently open
+bool IsSessionOpen(int hour)
+  {
+   // Asia   00:00–09:00 UTC  (JPY, Gold Asian demand)
+   if(Inp_TradeAsia    && hour >= 0  && hour < 9)  return true;
+   // London 07:00–16:00 UTC  (EUR, GBP, Gold)
+   if(Inp_TradeLondon  && hour >= 7  && hour < 16) return true;
+   // New York 13:00–21:00 UTC (USD, Gold)
+   if(Inp_TradeNewYork && hour >= 13 && hour < 21) return true;
+   return false;
+  }
+
+// True during London-NY overlap 12:00-16:00 UTC (peak liquidity)
+bool IsOverlapHour(int hour)
+  {
+   return (hour >= 12 && hour < 16);
+  }
+
+// Human-readable active session name for journal logs
+string ActiveSessionName(int hour)
+  {
+   string s = "";
+   if(hour >= 0  && hour < 9)  s += "Asia ";
+   if(hour >= 7  && hour < 16) s += "London ";
+   if(hour >= 12 && hour < 16) s += "[OVERLAP] ";
+   if(hour >= 13 && hour < 21) s += "NewYork ";
+   if(StringLen(s) == 0)       s =  "Closed";
+   return StringTrimRight(s);
+  }
+
 void OnDeinit(const int reason)
   {
    IndicatorRelease(h_EMA_Fast);  IndicatorRelease(h_EMA_Mid);
@@ -202,8 +239,15 @@ void OnTick()
 
    if(!newBar) return;   // wait for new bar for entries
 
-   // Trading hours check
-   if(dt.hour < Inp_StartHour || dt.hour >= Inp_EndHour) return;
+   // ── SESSION FILTER ────────────────────────────────────────────
+   if(!IsSessionOpen(dt.hour)) return;
+
+   // ── DYNAMIC SCORE THRESHOLD ───────────────────────────────────
+   // During London-NY overlap (12:00-16:00) volume is 3× higher —
+   // lower the entry threshold slightly to catch strong breakouts.
+   double dynMinScore = Inp_MinScore;
+   if(Inp_BoostOverlap && IsOverlapHour(dt.hour))
+      dynMinScore = MathMax(0.50, Inp_MinScore - Inp_OverlapBoost);
 
    // Compute AI signal
    double bullScore = 0, bearScore = 0;
@@ -242,7 +286,9 @@ void OnTick()
    double sl_dist = atrVal * Inp_SL_ATR_Mult;
    double tp_dist = atrVal * Inp_TP_ATR_Mult;
 
-   if(bullScore >= Inp_MinScore && !HasPosition(POSITION_TYPE_BUY))
+   string sessName = ActiveSessionName(dt.hour);
+
+   if(bullScore >= dynMinScore && !HasPosition(POSITION_TYPE_BUY))
      {
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double sl  = ask - sl_dist;
@@ -251,12 +297,14 @@ void OnTick()
       if(lot > 0)
         {
          Trade.Buy(lot, _Symbol, ask, sl, tp,
-                   StringFormat("QuantCore|%.3f|%.3f", bullScore, bearScore));
-         Print("QuantCore BUY | Score:", DoubleToString(bullScore,3),
+                   StringFormat("QuantCore[%.3f]|%.5f", bullScore, atrVal));
+         Print("QuantCore BUY | Session:", sessName,
+               " | Score:", DoubleToString(bullScore,3),
+               " | Threshold:", DoubleToString(dynMinScore,3),
                " | Lot:", lot, " | SL:", sl, " | TP:", tp);
         }
      }
-   else if(bearScore >= Inp_MinScore && !HasPosition(POSITION_TYPE_SELL))
+   else if(bearScore >= dynMinScore && !HasPosition(POSITION_TYPE_SELL))
      {
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
       double sl  = bid + sl_dist;
@@ -265,8 +313,10 @@ void OnTick()
       if(lot > 0)
         {
          Trade.Sell(lot, _Symbol, bid, sl, tp,
-                    StringFormat("QuantCore|%.3f|%.3f", bullScore, bearScore));
-         Print("QuantCore SELL | Score:", DoubleToString(bearScore,3),
+                    StringFormat("QuantCore[%.3f]|%.5f", bearScore, atrVal));
+         Print("QuantCore SELL | Session:", sessName,
+               " | Score:", DoubleToString(bearScore,3),
+               " | Threshold:", DoubleToString(dynMinScore,3),
                " | Lot:", lot, " | SL:", sl, " | TP:", tp);
         }
      }

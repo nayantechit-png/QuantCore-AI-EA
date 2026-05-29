@@ -1,7 +1,7 @@
 ; QuantCore AI EA — XAUUSD H1 Optimised Settings
-; Session: ALL (01:00-21:00 UTC)
+; Session: ALL sessions (Asia + London + New York)
 ; Backtest 2y: +53.2%  DD 5.8%  Sharpe 12.20  285 trades
-; Gold trades around the clock — Asian demand (01-07) is significant
+; Gold trades around the clock — Asian buyers (01-07) create significant moves
 
 ; ════ PROP FIRM RISK ════
 Inp_MaxDailyLoss=4.5
@@ -23,7 +23,6 @@ Inp_ADX_Period=14
 Inp_ATR_Period=14
 
 ; ════ TRADE MANAGEMENT ════
-; Gold moves 3-5× larger than forex — slightly tighter SL
 Inp_SL_ATR_Mult=1.5
 Inp_TP_ATR_Mult=3.5
 Inp_TrailingStop=true
@@ -34,10 +33,15 @@ Inp_MaxPositions=3
 Inp_KF_Delta=0.0001
 Inp_KF_Ve=0.001
 
-; ════ TRADING HOURS (UTC) — ALL SESSIONS ════
-; Asia gold demand 01:00-07:00, London 07:00, NY 13:00-21:00
-Inp_StartHour=1
-Inp_EndHour=21
+; ════ TRADING SESSIONS (UTC) — ALL SESSIONS ════
+; Asia 01:00-09:00  → Chinese/Indian gold demand, significant moves
+; London 07:00-16:00 → London fix at 10:30 UTC, major volume event
+; NewYork 13:00-21:00 → COMEX open at 13:30 UTC, highest gold volume
+Inp_TradeAsia=true
+Inp_TradeLondon=true
+Inp_TradeNewYork=true
+Inp_BoostOverlap=true
+Inp_OverlapBoost=0.03
 Inp_CloseFriday=true
 
 ; ════ SIGNAL WEIGHTS ════

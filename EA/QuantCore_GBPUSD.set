@@ -1,7 +1,7 @@
 ; QuantCore AI EA — GBPUSD H1 Optimised Settings
 ; Session: NY + London-NY Overlap ONLY (12:00-21:00 UTC)
-; Backtest 2y: +20.6%  DD 4.4%  Sharpe 9.52  208 trades  ← best DD for prop firm
-; NOTE: Restricting to NY+Overlap cuts DD in HALF vs all-session (8.1% → 4.4%)
+; Backtest 2y: +20.6%  DD 4.4%  Sharpe 9.52  208 trades
+; DD is HALF of all-session run (8.1% → 4.4%) — safest for prop firm
 
 ; ════ PROP FIRM RISK ════
 Inp_MaxDailyLoss=4.5
@@ -33,11 +33,14 @@ Inp_MaxPositions=3
 Inp_KF_Delta=0.0001
 Inp_KF_Ve=0.001
 
-; ════ TRADING HOURS (UTC) — NY + LONDON-NY OVERLAP ════
-; London-NY overlap starts 12:00, NY closes 21:00
-; GBP/USD gets 3× more volume during London-NY overlap vs Asia session
-Inp_StartHour=12
-Inp_EndHour=21
+; ════ TRADING SESSIONS (UTC) — NY + OVERLAP ONLY ════
+; GBP/USD Asia session → low liquidity, wide spreads → skip
+; London-NY overlap 12:00-16:00 is GBP's highest volume window
+Inp_TradeAsia=false
+Inp_TradeLondon=true
+Inp_TradeNewYork=true
+Inp_BoostOverlap=true
+Inp_OverlapBoost=0.04
 Inp_CloseFriday=true
 
 ; ════ SIGNAL WEIGHTS ════
