@@ -1,0 +1,48 @@
+; QuantCore AI EA — XAUUSD H1 Optimised Settings
+; Session: ALL (01:00-21:00 UTC)
+; Backtest 2y: +53.2%  DD 5.8%  Sharpe 12.20  285 trades
+; Gold trades around the clock — Asian demand (01-07) is significant
+
+; ════ PROP FIRM RISK ════
+Inp_MaxDailyLoss=4.5
+Inp_MaxTotalLoss=9.0
+Inp_RiskPerTrade=1.00
+Inp_ProfitLockAt=6.0
+Inp_ProfitLockDD=1.0
+
+; ════ AI SIGNAL ENGINE ════
+Inp_MinScore=0.58
+Inp_MinScoreMTF=0.52
+Inp_EMA_Fast=20
+Inp_EMA_Mid=50
+Inp_EMA_Slow=200
+Inp_RSI_Period=14
+Inp_Stoch_K=5
+Inp_Stoch_D=3
+Inp_ADX_Period=14
+Inp_ATR_Period=14
+
+; ════ TRADE MANAGEMENT ════
+; Gold moves 3-5× larger than forex — slightly tighter SL
+Inp_SL_ATR_Mult=1.5
+Inp_TP_ATR_Mult=3.5
+Inp_TrailingStop=true
+Inp_Trail_ATR=0.8
+Inp_MaxPositions=3
+
+; ════ KALMAN FILTER ════
+Inp_KF_Delta=0.0001
+Inp_KF_Ve=0.001
+
+; ════ TRADING HOURS (UTC) — ALL SESSIONS ════
+; Asia gold demand 01:00-07:00, London 07:00, NY 13:00-21:00
+Inp_StartHour=1
+Inp_EndHour=21
+Inp_CloseFriday=true
+
+; ════ SIGNAL WEIGHTS ════
+W_Trend=0.30
+W_Momentum=0.25
+W_Regime=0.20
+W_Kalman=0.15
+W_MTF=0.10

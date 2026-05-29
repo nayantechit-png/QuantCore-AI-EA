@@ -468,17 +468,103 @@
 
 </div>
 
+<!-- ── SESSION CLOCK ─────────────────────────────────────── -->
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 20px;margin-bottom:12px">
+  <div style="color:var(--dim);font-size:.65rem;letter-spacing:2px;margin-bottom:10px">🕐 LIVE TRADING SESSIONS (UTC)</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px" id="sessions">
+    <div class="sess-box" id="sess-asia">
+      <div class="sess-name">🌏 ASIA</div>
+      <div class="sess-hours">00:00 – 09:00</div>
+      <div class="sess-pairs">JPY · Gold</div>
+      <div class="sess-status" id="st-asia">CLOSED</div>
+    </div>
+    <div class="sess-box" id="sess-london">
+      <div class="sess-name">🇬🇧 LONDON</div>
+      <div class="sess-hours">07:00 – 16:00</div>
+      <div class="sess-pairs">EUR · GBP · Gold</div>
+      <div class="sess-status" id="st-london">CLOSED</div>
+    </div>
+    <div class="sess-box" id="sess-overlap">
+      <div class="sess-name">⚡ L-NY OVERLAP</div>
+      <div class="sess-hours">12:00 – 16:00</div>
+      <div class="sess-pairs">Highest volume</div>
+      <div class="sess-status" id="st-overlap">CLOSED</div>
+    </div>
+    <div class="sess-box" id="sess-ny">
+      <div class="sess-name">🗽 NEW YORK</div>
+      <div class="sess-hours">13:00 – 21:00</div>
+      <div class="sess-pairs">USD · Gold</div>
+      <div class="sess-status" id="st-ny">CLOSED</div>
+    </div>
+  </div>
+  <div style="margin-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:.72rem">
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px">
+      <span style="color:var(--dim)">EURUSD</span>
+      <span style="color:var(--green);float:right">01:00–21:00 ✅</span>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px">
+      <span style="color:var(--dim)">GBPUSD</span>
+      <span style="color:var(--yellow);float:right">12:00–21:00 ⚡</span>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px">
+      <span style="color:var(--dim)">XAUUSD</span>
+      <span style="color:var(--green);float:right">01:00–21:00 ✅</span>
+    </div>
+  </div>
+</div>
+
 <!-- ── FOOTER ─────────────────────────────────────────────── -->
 <div style="text-align:center;color:var(--dim);font-size:.65rem;padding:8px;letter-spacing:1px">
   QUANTCORE AI EA · GOATFUNDED PHASE-1 · CI: 4/4 PASS ✅ · github.com/nayantechit-png/QuantCore-AI-EA
 </div>
 
+<style>
+.sess-box {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; text-align: center;
+}
+.sess-name  { font-size:.72rem; color:var(--accent); font-weight:bold; margin-bottom:3px; }
+.sess-hours { font-size:.65rem; color:var(--dim); margin-bottom:2px; }
+.sess-pairs { font-size:.62rem; color:var(--dim); margin-bottom:6px; }
+.sess-status {
+  font-size:.7rem; font-weight:bold; padding:3px 8px;
+  border-radius:4px; letter-spacing:1px;
+}
+.sess-open   { background:rgba(0,230,118,.2); color:var(--green); border:1px solid var(--green); }
+.sess-closed { background:rgba(90,106,138,.15); color:var(--dim); }
+.sess-hot    { background:rgba(255,215,0,.2); color:var(--yellow); border:1px solid var(--yellow); animation: pulse2 1.5s infinite; }
+@keyframes pulse2 { 0%,100%{opacity:1} 50%{opacity:.5} }
+</style>
+
 <script>
-// ── CLOCK ────────────────────────────────────────────────────
+// ── CLOCK + SESSION INDICATOR ────────────────────────────────
 function tick() {
-  const d = new Date();
+  const d   = new Date();
+  const utc = d.getUTCHours() + d.getUTCMinutes()/60;
   document.getElementById('clock').textContent =
     d.toUTCString().slice(5,25) + ' UTC';
+
+  // Session open windows (UTC hours)
+  const sessions = {
+    'asia':    { open: utc >= 0    && utc < 9,  hot: false },
+    'london':  { open: utc >= 7    && utc < 16, hot: utc >= 7  && utc < 9  },
+    'overlap': { open: utc >= 12   && utc < 16, hot: true },
+    'ny':      { open: utc >= 13   && utc < 21, hot: utc >= 13 && utc < 16 },
+  };
+
+  Object.entries(sessions).forEach(([id, s]) => {
+    const el = document.getElementById(`st-${id}`);
+    const box= document.getElementById(`sess-${id}`);
+    if (!el) return;
+    el.className = 'sess-status ' + (s.hot && s.open ? 'sess-hot' : s.open ? 'sess-open' : 'sess-closed');
+    el.textContent = s.hot && s.open ? '🔥 ACTIVE' : s.open ? '● OPEN' : 'CLOSED';
+    box.style.borderColor = s.hot && s.open ? 'var(--yellow)' : s.open ? 'var(--green)' : 'var(--border)';
+  });
+
+  // Header live indicator
+  const anyOpen = Object.values(sessions).some(s => s.open);
+  const dot = document.querySelector('.dot');
+  if (dot) dot.style.background = anyOpen ? 'var(--green)' : 'var(--dim)';
 }
 tick(); setInterval(tick, 1000);
 
