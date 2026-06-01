@@ -1,37 +1,50 @@
 #pragma once
 #include "TrendBreakoutLogic.mqh"
 
-int logHandle = INVALID_HANDLE;
+int g_logHandle = INVALID_HANDLE;
 
 void InitLogger()
 {
-   logHandle = FileOpen("EA_log.csv",FILE_WRITE|FILE_CSV|FILE_ANSI);
-   if(logHandle!=INVALID_HANDLE)
-      FileWrite(logHandle,"time","symbol","direction","entry","sl","tp1","tp2","lots","score");
+    g_logHandle = FileOpen("btai_log.csv", FILE_WRITE|FILE_CSV|FILE_ANSI);
+    if(g_logHandle != INVALID_HANDLE)
+        FileWrite(g_logHandle,
+                  "time","type","symbol","posId",
+                  "direction","entry","sl","tp1","lots","score",
+                  "profit","trainStep");
 }
 
-void LogOpenedTrade(const Signal &sig,double lots,double score)
+void LogOpenedTrade(const Signal &sig, double lots, double score, ulong posId)
 {
-   if(logHandle==INVALID_HANDLE) return;
-   FileWrite(logHandle,
-             TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
-             _Symbol,
-             sig.direction,
-             sig.entryPrice,
-             sig.slPrice,
-             sig.tp1Price,
-             sig.tp2Price,
-             lots,
-             score);
+    if(g_logHandle == INVALID_HANDLE) return;
+    FileWrite(g_logHandle,
+              TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+              "OPEN", _Symbol, (string)posId,
+              sig.direction, sig.entryPrice, sig.slPrice, sig.tp1Price,
+              lots, score, "", "");
 }
 
-void LogSkippedSignal(const Signal &sig,double score)
+void LogTradeOutcome(ulong posId, double profit, int trainStep)
 {
-   // extend if you want skipped-signal logging
+    if(g_logHandle == INVALID_HANDLE) return;
+    FileWrite(g_logHandle,
+              TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+              "CLOSE", _Symbol, (string)posId,
+              "", "", "", "", "", "",
+              profit, trainStep);
+}
+
+void LogSkippedSignal(const Signal &sig, double score)
+{
+    if(g_logHandle == INVALID_HANDLE) return;
+    FileWrite(g_logHandle,
+              TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS),
+              "SKIP", _Symbol, "",
+              sig.direction, sig.entryPrice, sig.slPrice, sig.tp1Price,
+              "", score, "", "");
 }
 
 void CloseLogger()
 {
-   if(logHandle!=INVALID_HANDLE)
-      FileClose(logHandle);
+    if(g_logHandle != INVALID_HANDLE)
+        FileClose(g_logHandle);
 }

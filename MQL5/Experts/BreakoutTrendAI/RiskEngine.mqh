@@ -1,42 +1,47 @@
 #pragma once
 #include "Config.mqh"
 
-double dailyStartEquity;
-double weeklyStartEquity;
-int    tradesToday = 0;
+double g_dailyStartEquity  = 0.0;
+double g_weeklyStartEquity = 0.0;
+int    tradesToday         = 0;
 
 void InitRiskEngine()
 {
-   dailyStartEquity  = AccountEquity();
-   weeklyStartEquity = AccountEquity();
-   tradesToday       = 0;
+    g_dailyStartEquity  = AccountEquity();
+    g_weeklyStartEquity = AccountEquity();
+    tradesToday         = 0;
 }
 
 bool IsDailyOrWeeklyLimitHit()
 {
-   double dailyLoss  = (AccountEquity()-dailyStartEquity)/dailyStartEquity*100.0;
-   double weeklyLoss = (AccountEquity()-weeklyStartEquity)/weeklyStartEquity*100.0;
-   if(dailyLoss<=-InpMaxDailyLossPercent)  return true;
-   if(weeklyLoss<=-InpMaxWeeklyLossPercent)return true;
-   if(tradesToday>=InpMaxTradesPerDay)     return true;
-   return false;
+    double eq = AccountEquity();
+    if(g_dailyStartEquity  > 0 && (eq - g_dailyStartEquity)  / g_dailyStartEquity  * 100.0 <= -InpMaxDailyLossPercent)  return true;
+    if(g_weeklyStartEquity > 0 && (eq - g_weeklyStartEquity) / g_weeklyStartEquity * 100.0 <= -InpMaxWeeklyLossPercent) return true;
+    if(tradesToday >= InpMaxTradesPerDay) return true;
+    return false;
 }
 
 double PipValue()
 {
-   double tickValue = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
-   double tickSize  = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   return tickValue * (_Point/tickSize);
+    double tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+    double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+    return (ts > 0) ? tv * (_Point / ts) : tv;
 }
 
-double CalculateLotSize(double riskPercent,double slPips)
+double CalculateLotSize(double riskPct, double slPips)
 {
-   double riskMoney = AccountEquity()*riskPercent/100.0;
-   double lot = riskMoney/(slPips*PipValue());
-   return NormalizeDouble(lot,2);
+    if(slPips < 0.001) return 0.01;
+    double pv = PipValue();
+    if(pv < 1e-10) return 0.01;
+    double lot = (AccountEquity() * riskPct / 100.0) / (slPips * pv);
+    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+    double step   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+    lot = MathFloor(lot / step) * step;
+    return MathMax(minLot, MathMin(maxLot, lot));
 }
 
-bool CanOpenNewTrade(double riskPercent)
+bool CanOpenNewTrade()
 {
-   return true;
+    return true;
 }
