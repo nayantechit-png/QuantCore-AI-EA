@@ -101,6 +101,20 @@ int h_EMA_Fast, h_EMA_Mid, h_EMA_Slow;
 int h_RSI, h_Stoch, h_ADX, h_ATR;
 int h_EMA_Fast_H4, h_EMA_Slow_H4, h_RSI_H4;
 
+// Dashboard signal cache (updated each new bar)
+double g_LastBullScore = 0;
+double g_LastBearScore = 0;
+
+// Dashboard color palette
+#define QC_BG   C'15,19,29'
+#define QC_HDR  C'25,33,52'
+#define QC_GRN  C'42,200,95'
+#define QC_RED  C'215,62,62'
+#define QC_BLU  C'62,132,215'
+#define QC_YEL  C'215,178,42'
+#define QC_DIM  C'90,105,126'
+#define QC_WHT  C'220,225,235'
+
 //──────────────────────────────────────────────────────────────────
 // INIT / DEINIT
 //──────────────────────────────────────────────────────────────────
@@ -162,6 +176,7 @@ int OnInit()
 
    Print("QuantCore AI EA initialized | Balance: ", g_StartBalance,
          " | MaxDailyLoss: ", Inp_MaxDailyLoss, "% | MaxTotalLoss: ", Inp_MaxTotalLoss, "%");
+   UpdateDashboard();
    return INIT_SUCCEEDED;
   }
 
@@ -208,6 +223,7 @@ void OnDeinit(const int reason)
    IndicatorRelease(h_Stoch);     IndicatorRelease(h_ADX);
    IndicatorRelease(h_ATR);       IndicatorRelease(h_EMA_Fast_H4);
    IndicatorRelease(h_EMA_Slow_H4); IndicatorRelease(h_RSI_H4);
+   DestroyDashboard();
    Print("QuantCore AI EA stopped. Reason: ", reason);
   }
 
@@ -225,6 +241,7 @@ void OnTick()
 
    // Always run: trailing stop + prop limit checks
    UpdateKalmanOnTick();
+   UpdateDashboard();
    if(Inp_TrailingStop) ManageTrailingStop();
    CheckDailyReset();
    if(!CheckPropLimits()) return;
@@ -252,6 +269,8 @@ void OnTick()
    // Compute AI signal
    double bullScore = 0, bearScore = 0;
    if(!CalcSignalScores(bullScore, bearScore)) return;
+   g_LastBullScore = bullScore;
+   g_LastBearScore = bearScore;
 
    int openCount = CountOpenPositions();
 
@@ -644,4 +663,198 @@ void CloseAllPositions(string reason)
       if(PosInfo.SelectByIndex(i) && PosInfo.Magic() == Trade.RequestMagic())
         Trade.PositionClose(PosInfo.Ticket());
      }
+  }
+
+//──────────────────────────────────────────────────────────────────
+// DASHBOARD
+//──────────────────────────────────────────────────────────────────
+
+void _QR(string n, int x, int y, int w, int h, color bg, color brd = clrNONE)
+  {
+   if(ObjectFind(0, n) < 0) ObjectCreate(0, n, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, n, OBJPROP_XDISTANCE,  x);
+   ObjectSetInteger(0, n, OBJPROP_YDISTANCE,  y);
+   ObjectSetInteger(0, n, OBJPROP_XSIZE,      w);
+   ObjectSetInteger(0, n, OBJPROP_YSIZE,      h);
+   ObjectSetInteger(0, n, OBJPROP_BGCOLOR,    bg);
+   ObjectSetInteger(0, n, OBJPROP_BORDER_TYPE,BORDER_FLAT);
+   ObjectSetInteger(0, n, OBJPROP_COLOR,      brd == clrNONE ? bg : brd);
+   ObjectSetInteger(0, n, OBJPROP_WIDTH,      brd == clrNONE ? 0 : 1);
+   ObjectSetInteger(0, n, OBJPROP_CORNER,     CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, n, OBJPROP_HIDDEN,     true);
+   ObjectSetInteger(0, n, OBJPROP_ZORDER,     0);
+  }
+
+void _QL(string n, string txt, int x, int y, color clr, int sz = 9)
+  {
+   if(ObjectFind(0, n) < 0) ObjectCreate(0, n, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, n, OBJPROP_XDISTANCE,  x);
+   ObjectSetInteger(0, n, OBJPROP_YDISTANCE,  y);
+   ObjectSetInteger(0, n, OBJPROP_COLOR,      clr);
+   ObjectSetInteger(0, n, OBJPROP_FONTSIZE,   sz);
+   ObjectSetString (0, n, OBJPROP_FONT,       "Consolas");
+   ObjectSetString (0, n, OBJPROP_TEXT,       txt);
+   ObjectSetInteger(0, n, OBJPROP_CORNER,     CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, n, OBJPROP_HIDDEN,     true);
+   ObjectSetInteger(0, n, OBJPROP_ZORDER,     1);
+  }
+
+void DestroyDashboard()
+  {
+   ObjectsDeleteAll(0, "QC_");
+   ChartRedraw(0);
+  }
+
+void UpdateDashboard()
+  {
+   int X = 20, Y = 20, W = 295, LH = 17;
+
+   double equity   = AccountInfoDouble(ACCOUNT_EQUITY);
+   double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
+   double dailyPL  = equity - g_DayStartBalance;
+   double dailyPct = g_DayStartBalance > 0
+                     ? MathMax(0.0, (g_DayStartBalance - equity) / g_DayStartBalance * 100.0) : 0.0;
+   double totalPct = g_StartBalance > 0
+                     ? MathMax(0.0, (g_StartBalance - equity) / g_StartBalance * 100.0) : 0.0;
+   double gainPct  = g_StartBalance > 0
+                     ? (equity - g_StartBalance) / g_StartBalance * 100.0 : 0.0;
+
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   string sessName = ActiveSessionName(dt.hour);
+   bool   sessOpen = IsSessionOpen(dt.hour);
+   int    openCnt  = CountOpenPositions();
+
+   // Background panel
+   _QR("QC_BG", X, Y, W, 380, QC_BG, QC_BLU);
+
+   // ── HEADER ─────────────────────────────────────────────────────
+   int ry = Y;
+   _QR("QC_HDR0", X, ry, W, LH + 6, QC_HDR, clrNONE);
+   _QL("QC_TITLE", "QUANTCORE AI  v1.0",  X + 8,       ry + 4, QC_WHT, 10);
+   color  stClr = g_TradingAllowed ? QC_GRN : QC_RED;
+   string stTxt = g_TradingAllowed ? "● ACTIVE" : "■ STOPPED";
+   _QL("QC_STAT",  stTxt,                 X + W - 88,  ry + 4, stClr, 9);
+   ry += LH + 6;
+
+   // ── SYMBOL / SESSION ───────────────────────────────────────────
+   _QR("QC_R1", X, ry, W, LH, QC_HDR, clrNONE);
+   _QL("QC_SYM",  "SYM  " + _Symbol,     X + 8,       ry + 3, QC_BLU, 9);
+   _QL("QC_SES",  sessName,               X + W - 128, ry + 3, sessOpen ? QC_GRN : QC_DIM, 9);
+   ry += LH;
+
+   // ── KALMAN DIRECTION ───────────────────────────────────────────
+   string kDir = kf_theta > 0 ? "▲ BULL" : (kf_theta < 0 ? "▼ BEAR" : "── FLAT");
+   color  kClr = kf_theta > 0 ? QC_GRN  : (kf_theta < 0 ? QC_RED  : QC_DIM);
+   _QR("QC_R2", X, ry, W, LH, QC_BG, clrNONE);
+   _QL("QC_KDIR", "KF   " + kDir,              X + 8,       ry + 3, kClr, 9);
+   _QL("QC_KVAL", DoubleToString(kf_theta, 6),  X + W - 110, ry + 3, QC_DIM, 8);
+   ry += LH;
+
+   _QR("QC_SEP1", X, ry, W, 1, QC_HDR, clrNONE); ry += 5;
+
+   // ── AI SIGNAL SCORES ───────────────────────────────────────────
+   _QR("QC_AIH0", X, ry, W, LH, QC_HDR, clrNONE);
+   _QL("QC_AIHT", "AI  SIGNAL  SCORES", X + 8, ry + 3, QC_WHT, 9);
+   ry += LH;
+
+   int bw = W - 112;
+   // Bull bar
+   int bBarW = (int)MathRound(g_LastBullScore * bw);
+   _QR("QC_BB_BG",  X + 80, ry + 4, bw,                LH - 8, QC_HDR, clrNONE);
+   _QR("QC_BB_BAR", X + 80, ry + 4, MathMax(2, bBarW),  LH - 8, QC_GRN, clrNONE);
+   _QL("QC_BUL",   "BULL", X + 8,  ry + 3, QC_GRN, 9);
+   _QL("QC_BUL_V", DoubleToString(g_LastBullScore, 3), X + 40, ry + 3, QC_GRN, 9);
+   ry += LH;
+
+   // Bear bar
+   int bearBarW = (int)MathRound(g_LastBearScore * bw);
+   _QR("QC_BR_BG",  X + 80, ry + 4, bw,                 LH - 8, QC_HDR, clrNONE);
+   _QR("QC_BR_BAR", X + 80, ry + 4, MathMax(2, bearBarW), LH - 8, QC_RED, clrNONE);
+   _QL("QC_BER",   "BEAR", X + 8,  ry + 3, QC_RED, 9);
+   _QL("QC_BER_V", DoubleToString(g_LastBearScore, 3), X + 40, ry + 3, QC_RED, 9);
+   ry += LH;
+
+   _QR("QC_THR0", X, ry, W, LH, QC_BG, clrNONE);
+   _QL("QC_THR",  StringFormat("THRESHOLD   %.3f", Inp_MinScore), X + 8, ry + 3, QC_DIM, 9);
+   ry += LH;
+
+   _QR("QC_SEP2", X, ry, W, 1, QC_HDR, clrNONE); ry += 5;
+
+   // ── ACCOUNT ────────────────────────────────────────────────────
+   _QR("QC_ACH0", X, ry, W, LH, QC_HDR, clrNONE);
+   _QL("QC_ACHT", "ACCOUNT", X + 8, ry + 3, QC_WHT, 9);
+   ry += LH;
+
+   _QL("QC_EQ",  StringFormat("EQUITY    %.2f", equity),  X + 8, ry + 3, QC_WHT, 9); ry += LH;
+   _QL("QC_BAL", StringFormat("BALANCE   %.2f", balance), X + 8, ry + 3, QC_DIM, 9); ry += LH;
+
+   color plClr = dailyPL >= 0 ? QC_GRN : QC_RED;
+   _QL("QC_DPL",  StringFormat("DAILY P&L  %+.2f", dailyPL),  X + 8, ry + 3, plClr, 9); ry += LH;
+
+   color gainClr = gainPct >= 0 ? QC_GRN : QC_RED;
+   _QL("QC_GAIN", StringFormat("NET GAIN   %+.2f%%", gainPct), X + 8, ry + 3, gainClr, 9); ry += LH;
+
+   _QR("QC_SEP3", X, ry, W, 1, QC_HDR, clrNONE); ry += 5;
+
+   // ── RISK MONITOR ───────────────────────────────────────────────
+   _QR("QC_RKH0", X, ry, W, LH, QC_HDR, clrNONE);
+   _QL("QC_RKHT", "RISK  MONITOR", X + 8, ry + 3, QC_WHT, 9);
+   ry += LH;
+
+   color dlClr = dailyPct >= Inp_MaxDailyLoss * 0.75 ? QC_RED
+               : dailyPct >= Inp_MaxDailyLoss * 0.50 ? QC_YEL : QC_GRN;
+   _QL("QC_DL", StringFormat("DAILY LOSS   %.2f%% / %.1f%%", dailyPct, Inp_MaxDailyLoss),
+       X + 8, ry + 3, dlClr, 9); ry += LH;
+
+   color tlClr = totalPct >= Inp_MaxTotalLoss * 0.75 ? QC_RED
+               : totalPct >= Inp_MaxTotalLoss * 0.50 ? QC_YEL : QC_GRN;
+   _QL("QC_TL", StringFormat("TOTAL LOSS   %.2f%% / %.1f%%", totalPct, Inp_MaxTotalLoss),
+       X + 8, ry + 3, tlClr, 9); ry += LH;
+
+   string plkTxt = g_ProfitLocked ? "● LOCKED  " : "○ MONITORING";
+   color  plkClr = g_ProfitLocked ? QC_YEL : QC_DIM;
+   _QL("QC_PLK", "PROFIT LOCK  " + plkTxt, X + 8, ry + 3, plkClr, 9); ry += LH;
+
+   // Peak drawdown row (always rendered; blank when lock inactive)
+   if(g_ProfitLocked && g_StartBalance > 0)
+     {
+      double drawPk = MathMax(0.0, (g_PeakEquity - equity) / g_StartBalance * 100.0);
+      _QL("QC_PKD", StringFormat("  FROM PEAK  %.2f%% / %.1f%%", drawPk, Inp_ProfitLockDD),
+          X + 8, ry + 3, QC_YEL, 9);
+     }
+   else
+      _QL("QC_PKD", "", X + 8, ry + 3, QC_DIM, 9);
+   ry += LH;
+
+   // Stop reason row (always rendered; blank when no stop)
+   if(StringLen(g_StopReason) > 0)
+     {
+      _QR("QC_STRK", X, ry, W, LH, C'60,20,20', clrNONE);
+      _QL("QC_STR",  "⚠  " + g_StopReason, X + 8, ry + 3, QC_RED, 9);
+     }
+   else
+     {
+      _QR("QC_STRK", X, ry, W, LH, QC_BG, clrNONE);
+      _QL("QC_STR",  "", X + 8, ry + 3, QC_DIM, 9);
+     }
+   ry += LH;
+
+   _QR("QC_SEP4", X, ry, W, 1, QC_HDR, clrNONE); ry += 5;
+
+   // ── POSITIONS ──────────────────────────────────────────────────
+   _QR("QC_PSH0", X, ry, W, LH, QC_HDR, clrNONE);
+   color posClr = openCnt > 0 ? QC_BLU : QC_DIM;
+   _QL("QC_POS", StringFormat("POSITIONS  %d / %d", openCnt, Inp_MaxPositions),
+       X + 8, ry + 3, posClr, 9);
+   string trTxt = Inp_TrailingStop ? "TRAIL ●" : "TRAIL ○";
+   color  trClr = Inp_TrailingStop ? QC_GRN : QC_DIM;
+   _QL("QC_TRL", trTxt, X + W - 78, ry + 3, trClr, 9);
+   ry += LH;
+
+   // Timestamp
+   _QL("QC_TS", TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES), X + 8, ry + 3, QC_DIM, 8);
+
+   ChartRedraw(0);
   }
