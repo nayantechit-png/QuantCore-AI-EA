@@ -1,0 +1,600 @@
+#property strict
+#property description "BreakoutTrendAI – self-learning EA, single file"
+#property version "2.0"
+
+// ═══════════════════════════════════════════════════════════════
+//  INPUTS
+// ═══════════════════════════════════════════════════════════════
+input double InpRiskPercentPerTrade  = 0.35;
+input double InpMaxDailyLossPercent  = 3.0;
+input double InpMaxWeeklyLossPercent = 4.0;
+input int    InpMaxTradesPerDay      = 6;
+
+input double InpSL_ATR_Multiplier    = 1.5;
+input double InpTP1_R_Multiple       = 1.0;
+input double InpTP2_R_Multiple       = 2.5;
+
+input int    InpLondonStartHour      = 8;
+input int    InpLondonEndHour        = 11;
+input int    InpNYStartHour          = 14;
+input int    InpNYEndHour            = 17;
+
+input double InpAI_Threshold         = 0.55;
+input string InpAI_ModelFile         = "btai_model.dat";
+
+input double InpLearningRate         = 0.001;
+input double InpMomentum             = 0.90;
+input int    InpSaveEveryNTrades     = 5;
+
+input int    InpMagicNumber          = 787878;
+
+// ═══════════════════════════════════════════════════════════════
+//  INDICATORS
+// ═══════════════════════════════════════════════════════════════
+double GetATR(int period = 14)
+{
+    return iATR(_Symbol, PERIOD_CURRENT, period, 0);
+}
+double GetEMA(int period)
+{
+    return iMA(_Symbol, PERIOD_CURRENT, period, 0, MODE_EMA, PRICE_CLOSE, 0);
+}
+double GetRSI(int period = 14)
+{
+    return iRSI(_Symbol, PERIOD_CURRENT, period, PRICE_CLOSE, 0);
+}
+double GetSpreadPoints()
+{
+    return (SymbolInfoDouble(_Symbol, SYMBOL_ASK) -
+            SymbolInfoDouble(_Symbol, SYMBOL_BID)) / _Point;
+}
+bool GetRange(double &high, double &low, int lookback = 20)
+{
+    int hi = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, lookback, 1);
+    int lo = iLowest (_Symbol, PERIOD_CURRENT, MODE_LOW,  lookback, 1);
+    high = iHigh(_Symbol, PERIOD_CURRENT, hi);
+    low  = iLow (_Symbol, PERIOD_CURRENT, lo);
+    double pts = (high - low) / _Point;
+    return (pts >= 15.0 && pts <= 80.0);
+}
+bool IsNewBar()
+{
+    static datetime s_last = 0;
+    datetime t = iTime(_Symbol, PERIOD_CURRENT, 0);
+    if(t == s_last) return false;
+    s_last = t;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SIGNAL STRUCT + BREAKOUT TREND LOGIC
+// ═══════════════════════════════════════════════════════════════
+struct Signal
+{
+    int    direction;
+    double entryPrice;
+    double slPrice;
+    double tp1Price;
+    double tp2Price;
+    double rangeHigh;
+    double rangeLow;
+};
+
+bool IsUptrend()
+{
+    double close  = iClose(_Symbol, PERIOD_CURRENT, 0);
+    double ema50  = GetEMA(50);
+    double ema200 = GetEMA(200);
+    double rsi    = GetRSI(14);
+    return (close > ema200 && ema50 > ema200 && rsi > 50.0);
+}
+bool IsDowntrend()
+{
+    double close  = iClose(_Symbol, PERIOD_CURRENT, 0);
+    double ema50  = GetEMA(50);
+    double ema200 = GetEMA(200);
+    double rsi    = GetRSI(14);
+    return (close < ema200 && ema50 < ema200 && rsi < 50.0);
+}
+bool GetBreakoutTrendSignal(Signal &sig)
+{
+    double high, low;
+    if(!GetRange(high, low)) return false;
+
+    double close1 = iClose(_Symbol, PERIOD_CURRENT, 1);
+    double atr    = GetATR(14);
+    if(atr < _Point) return false;
+    double slDist = atr * InpSL_ATR_Multiplier;
+
+    if(IsUptrend() && close1 > high)
+    {
+        sig.direction  =  1;
+        sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+        sig.slPrice    = sig.entryPrice - slDist;
+        sig.tp1Price   = sig.entryPrice + slDist * InpTP1_R_Multiple;
+        sig.tp2Price   = sig.entryPrice + slDist * InpTP2_R_Multiple;
+        sig.rangeHigh  = high;
+        sig.rangeLow   = low;
+        return true;
+    }
+    if(IsDowntrend() && close1 < low)
+    {
+        sig.direction  = -1;
+        sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+        sig.slPrice    = sig.entryPrice + slDist;
+        sig.tp1Price   = sig.entryPrice - slDist * InpTP1_R_Multiple;
+        sig.tp2Price   = sig.entryPrice - slDist * InpTP2_R_Multiple;
+        sig.rangeHigh  = high;
+        sig.rangeLow   = low;
+        return true;
+    }
+    return false;
+}
+double CalcSLPips(const Signal &sig)
+{
+    return MathAbs(sig.entryPrice - sig.slPrice) / _Point;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AI  –  SELF-LEARNING  MLP  (32 → 24 → 12 → 1)
+// ═══════════════════════════════════════════════════════════════
+#define NN_IN   32
+#define NN_H1   24
+#define NN_H2   12
+#define NN_OUT   1
+
+double g_W1[NN_H1 * NN_IN],  g_b1[NN_H1];
+double g_W2[NN_H2 * NN_H1],  g_b2[NN_H2];
+double g_W3[NN_OUT * NN_H2], g_b3[NN_OUT];
+
+double g_vW1[NN_H1 * NN_IN],  g_vb1[NN_H1];
+double g_vW2[NN_H2 * NN_H1],  g_vb2[NN_H2];
+double g_vW3[NN_OUT * NN_H2], g_vb3[NN_OUT];
+
+double g_a0[NN_IN];
+double g_z1[NN_H1], g_a1[NN_H1];
+double g_z2[NN_H2], g_a2[NN_H2];
+double g_z3[NN_OUT];
+
+double g_fm[NN_IN], g_fM2[NN_IN];
+long   g_fN         = 0;
+int    g_trainSteps = 0;
+
+// ── Math ─────────────────────────────────────────────────────
+double NN_Sig(double x)  { x=MathMax(-20,MathMin(20,x)); return 1.0/(1.0+MathExp(-x)); }
+double NN_Relu(double x) { return x>0?x:0; }
+double NN_RelD(double x) { return x>0?1.0:0.0; }
+
+double NN_Gauss()
+{
+    double u1=(MathRand()+1.0)/32769.0, u2=(MathRand()+1.0)/32769.0;
+    return MathSqrt(-2.0*MathLog(u1))*MathCos(2.0*MathPi()*u2);
+}
+void NN_Xavier(double &W[], int sz, int fan)
+{ double s=MathSqrt(2.0/fan); for(int i=0;i<sz;i++) W[i]=NN_Gauss()*s; }
+void NN_Zero(double &a[], int n) { for(int i=0;i<n;i++) a[i]=0; }
+
+// ── Online scaler ────────────────────────────────────────────
+void UpdateScaler(double &x[])
+{
+    g_fN++;
+    for(int i=0;i<NN_IN;i++)
+    {
+        double d=x[i]-g_fm[i];
+        g_fm[i]+=d/(double)g_fN;
+        g_fM2[i]+=d*(x[i]-g_fm[i]);
+    }
+}
+void NormFeatures(double &x[], double &out[])
+{
+    for(int i=0;i<NN_IN;i++)
+    {
+        double var=(g_fN>1)?g_fM2[i]/(double)(g_fN-1):1.0;
+        double std=(var>1e-10)?MathSqrt(var):1.0;
+        out[i]=MathMax(-3.0,MathMin(3.0,(x[i]-g_fm[i])/std));
+    }
+}
+
+// ── Feature builder (32-dim) ─────────────────────────────────
+void BuildFeatures(const Signal &sig, double &f[])
+{
+    double atr=GetATR(14), c0=iClose(_Symbol,PERIOD_CURRENT,0);
+    double ema50=GetEMA(50), ema200=GetEMA(200);
+    if(atr<1e-10) atr=1.0;
+    if(c0<1e-10)  c0=1.0;
+
+    f[0]=atr/c0;
+    f[1]=GetSpreadPoints()/atr;
+    f[2]=(sig.rangeHigh-sig.rangeLow)/atr;
+    f[3]=(c0-ema50)/atr;
+    f[4]=(c0-ema200)/atr;
+    f[5]=(ema50-ema200)/atr;
+    f[6]=GetRSI(14)/100.0;
+    f[7]=(double)sig.direction;
+
+    MqlDateTime dt; TimeToStruct(TimeCurrent(),dt);
+    f[8]=dt.hour/23.0;
+    f[9]=dt.day_of_week/6.0;
+
+    for(int k=0;k<7;k++)
+    {
+        double o=iOpen(_Symbol,PERIOD_CURRENT,k+1);
+        double c=iClose(_Symbol,PERIOD_CURRENT,k+1);
+        f[10+k]=(c-o)/atr;
+    }
+    for(int k=0;k<4;k++)
+    {
+        double h=iHigh(_Symbol,PERIOD_CURRENT,k+1);
+        double l=iLow(_Symbol,PERIOD_CURRENT,k+1);
+        f[17+k]=(h-l)/atr;
+    }
+
+    double h1=iHigh(_Symbol,PERIOD_CURRENT,1), l1=iLow(_Symbol,PERIOD_CURRENT,1);
+    double c1=iClose(_Symbol,PERIOD_CURRENT,1), o1=iOpen(_Symbol,PERIOD_CURRENT,1);
+    f[21]=(h1-MathMax(o1,c1))/atr;
+    f[22]=(MathMin(o1,c1)-l1)/atr;
+    f[23]=(sig.entryPrice-sig.rangeHigh)/atr;
+    f[24]=(sig.entryPrice-sig.rangeLow)/atr;
+    f[25]=(c0-iClose(_Symbol,PERIOD_CURRENT,10))/atr;
+    for(int i=26;i<32;i++) f[i]=0.0;
+}
+
+// ── Forward pass ─────────────────────────────────────────────
+double ForwardPass(double &n[])
+{
+    for(int i=0;i<NN_IN;i++) g_a0[i]=n[i];
+    for(int r=0;r<NN_H1;r++)
+    {
+        double s=g_b1[r];
+        for(int c=0;c<NN_IN;c++) s+=g_W1[r*NN_IN+c]*g_a0[c];
+        g_z1[r]=s; g_a1[r]=NN_Relu(s);
+    }
+    for(int r=0;r<NN_H2;r++)
+    {
+        double s=g_b2[r];
+        for(int c=0;c<NN_H1;c++) s+=g_W2[r*NN_H1+c]*g_a1[c];
+        g_z2[r]=s; g_a2[r]=NN_Relu(s);
+    }
+    double s=g_b3[0];
+    for(int c=0;c<NN_H2;c++) s+=g_W3[c]*g_a2[c];
+    g_z3[0]=s;
+    return NN_Sig(s);
+}
+
+// ── Backprop ─────────────────────────────────────────────────
+void Backprop(double label)
+{
+    double lr=InpLearningRate, mom=InpMomentum;
+    double dz3=NN_Sig(g_z3[0])-label;
+
+    for(int c=0;c<NN_H2;c++)
+    { g_vW3[c]=mom*g_vW3[c]-lr*dz3*g_a2[c]; g_W3[c]+=g_vW3[c]; }
+    g_vb3[0]=mom*g_vb3[0]-lr*dz3; g_b3[0]+=g_vb3[0];
+
+    double dz2[NN_H2];
+    for(int r=0;r<NN_H2;r++) dz2[r]=g_W3[r]*dz3*NN_RelD(g_z2[r]);
+    for(int r=0;r<NN_H2;r++)
+    {
+        for(int c=0;c<NN_H1;c++)
+        { g_vW2[r*NN_H1+c]=mom*g_vW2[r*NN_H1+c]-lr*dz2[r]*g_a1[c]; g_W2[r*NN_H1+c]+=g_vW2[r*NN_H1+c]; }
+        g_vb2[r]=mom*g_vb2[r]-lr*dz2[r]; g_b2[r]+=g_vb2[r];
+    }
+
+    double dz1[NN_H1];
+    for(int r=0;r<NN_H1;r++)
+    {
+        double d=0; for(int k=0;k<NN_H2;k++) d+=g_W2[k*NN_H1+r]*dz2[k];
+        dz1[r]=d*NN_RelD(g_z1[r]);
+    }
+    for(int r=0;r<NN_H1;r++)
+    {
+        for(int c=0;c<NN_IN;c++)
+        { g_vW1[r*NN_IN+c]=mom*g_vW1[r*NN_IN+c]-lr*dz1[r]*g_a0[c]; g_W1[r*NN_IN+c]+=g_vW1[r*NN_IN+c]; }
+        g_vb1[r]=mom*g_vb1[r]-lr*dz1[r]; g_b1[r]+=g_vb1[r];
+    }
+
+    g_trainSteps++;
+    if(g_trainSteps % InpSaveEveryNTrades == 0) SaveModel(InpAI_ModelFile);
+}
+
+// ── Public AI API ─────────────────────────────────────────────
+double GetSignalScore(double &features[])
+{
+    double norm[NN_IN]; NormFeatures(features,norm); return ForwardPass(norm);
+}
+void LearnFromTrade(double &features[], double profit)
+{
+    double norm[NN_IN]; NormFeatures(features,norm);
+    double score=ForwardPass(norm);
+    double pct=(AccountEquity()>0)?profit/AccountEquity()*100.0:0.0;
+    double label=NN_Sig(pct*20.0);
+    Backprop(label);
+    Print("AI | step=",g_trainSteps,
+          "  profit=",DoubleToString(profit,2),
+          "  label=",DoubleToString(label,3),
+          "  score=",DoubleToString(score,3));
+}
+
+// ── Save / Load ───────────────────────────────────────────────
+bool SaveModel(string fn)
+{
+    int h=FileOpen(fn,FILE_WRITE|FILE_TXT|FILE_ANSI);
+    if(h==INVALID_HANDLE) return false;
+    FileWriteString(h,IntegerToString(NN_IN)+" "+IntegerToString(NN_H1)+
+                      " "+IntegerToString(NN_H2)+" "+IntegerToString(NN_OUT)+"\n");
+    string ln; int i;
+    ln=""; for(i=0;i<NN_H1*NN_IN;i++) ln+=DoubleToString(g_W1[i],8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_H1;i++)       ln+=DoubleToString(g_b1[i],8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_H2*NN_H1;i++) ln+=DoubleToString(g_W2[i],8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_H2;i++)       ln+=DoubleToString(g_b2[i],8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_H2;i++)       ln+=DoubleToString(g_W3[i],8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_OUT;i++)      ln+=DoubleToString(g_b3[i],8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_IN;i++)       ln+=DoubleToString(g_fm[i], 8)+" "; FileWriteString(h,ln+"\n");
+    ln=""; for(i=0;i<NN_IN;i++)       ln+=DoubleToString(g_fM2[i],8)+" "; FileWriteString(h,ln+"\n");
+    FileWriteString(h,IntegerToString((int)g_fN)+"\n");
+    FileWriteString(h,IntegerToString(g_trainSteps)+"\n");
+    FileClose(h);
+    return true;
+}
+bool LoadModel(string fn)
+{
+    int h=FileOpen(fn,FILE_READ|FILE_TXT);
+    if(h==INVALID_HANDLE) return false;
+    int n0=(int)FileReadNumber(h),n1=(int)FileReadNumber(h),
+        n2=(int)FileReadNumber(h),n3=(int)FileReadNumber(h);
+    if(n0!=NN_IN||n1!=NN_H1||n2!=NN_H2||n3!=NN_OUT){FileClose(h);return false;}
+    int i;
+    for(i=0;i<n1*n0;i++) g_W1[i]=FileReadNumber(h);
+    for(i=0;i<n1;i++)    g_b1[i]=FileReadNumber(h);
+    for(i=0;i<n2*n1;i++) g_W2[i]=FileReadNumber(h);
+    for(i=0;i<n2;i++)    g_b2[i]=FileReadNumber(h);
+    for(i=0;i<n2;i++)    g_W3[i]=FileReadNumber(h);
+    for(i=0;i<n3;i++)    g_b3[i]=FileReadNumber(h);
+    for(i=0;i<n0;i++)    g_fm[i] =FileReadNumber(h);
+    for(i=0;i<n0;i++)    g_fM2[i]=FileReadNumber(h);
+    g_fN=(long)FileReadNumber(h); g_trainSteps=(int)FileReadNumber(h);
+    FileClose(h);
+    return true;
+}
+void InitAI(string fn)
+{
+    NN_Zero(g_vW1,NN_H1*NN_IN); NN_Zero(g_vb1,NN_H1);
+    NN_Zero(g_vW2,NN_H2*NN_H1); NN_Zero(g_vb2,NN_H2);
+    NN_Zero(g_vW3,NN_OUT*NN_H2); NN_Zero(g_vb3,NN_OUT);
+    NN_Zero(g_fm,NN_IN);
+    for(int i=0;i<NN_IN;i++) g_fM2[i]=1.0;
+    g_fN=0; g_trainSteps=0;
+
+    if(LoadModel(fn))
+    { Print("AI: model loaded | steps=",g_trainSteps," scalerN=",(int)g_fN); return; }
+
+    MathSrand((int)(TimeCurrent()&0x7FFFFFFF));
+    NN_Xavier(g_W1,NN_H1*NN_IN,NN_IN);  NN_Zero(g_b1,NN_H1);
+    NN_Xavier(g_W2,NN_H2*NN_H1,NN_H1);  NN_Zero(g_b2,NN_H2);
+    NN_Xavier(g_W3,NN_OUT*NN_H2,NN_H2); NN_Zero(g_b3,NN_OUT);
+    Print("AI: fresh random weights (no saved model)");
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RISK ENGINE
+// ═══════════════════════════════════════════════════════════════
+double g_dailyEq=0, g_weeklyEq=0;
+int    tradesToday=0;
+
+void InitRisk()
+{
+    g_dailyEq=AccountEquity(); g_weeklyEq=AccountEquity(); tradesToday=0;
+}
+bool LimitHit()
+{
+    double eq=AccountEquity();
+    if(g_dailyEq>0  && (eq-g_dailyEq) /g_dailyEq *100<=-InpMaxDailyLossPercent)  return true;
+    if(g_weeklyEq>0 && (eq-g_weeklyEq)/g_weeklyEq*100<=-InpMaxWeeklyLossPercent) return true;
+    if(tradesToday>=InpMaxTradesPerDay) return true;
+    return false;
+}
+double CalcLots(double riskPct, double slPips)
+{
+    if(slPips<0.001) return 0.01;
+    double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+    double ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+    double pv=(ts>0)?tv*(_Point/ts):tv;
+    if(pv<1e-10) return 0.01;
+    double lot=AccountEquity()*riskPct/100.0/(slPips*pv);
+    double mn=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+    double mx=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+    double st=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+    lot=MathFloor(lot/st)*st;
+    return MathMax(mn,MathMin(mx,lot));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOGGER
+// ═══════════════════════════════════════════════════════════════
+int g_log=INVALID_HANDLE;
+
+void InitLogger()
+{
+    g_log=FileOpen("btai_log.csv",FILE_WRITE|FILE_CSV|FILE_ANSI);
+    if(g_log!=INVALID_HANDLE)
+        FileWrite(g_log,"time","type","symbol","posId",
+                  "direction","entry","sl","tp1","lots","score","profit","step");
+}
+void LogOpen(const Signal &sig,double lots,double score,ulong posId)
+{
+    if(g_log==INVALID_HANDLE) return;
+    FileWrite(g_log,TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+              "OPEN",_Symbol,(string)posId,
+              sig.direction,sig.entryPrice,sig.slPrice,sig.tp1Price,
+              lots,score,"","");
+}
+void LogClose(ulong posId,double profit)
+{
+    if(g_log==INVALID_HANDLE) return;
+    FileWrite(g_log,TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+              "CLOSE",_Symbol,(string)posId,"","","","","","",profit,g_trainSteps);
+}
+void LogSkip(const Signal &sig,double score)
+{
+    if(g_log==INVALID_HANDLE) return;
+    FileWrite(g_log,TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+              "SKIP",_Symbol,"",sig.direction,sig.entryPrice,"","","",score,"","");
+}
+void CloseLogger() { if(g_log!=INVALID_HANDLE) FileClose(g_log); }
+
+// ═══════════════════════════════════════════════════════════════
+//  TRADE MANAGER
+// ═══════════════════════════════════════════════════════════════
+#define MAX_MEM 20
+struct TRec { ulong posId; double feat[NN_IN]; bool used; };
+TRec   g_mem[MAX_MEM];
+double g_pend[NN_IN];
+bool   g_hasPend=false;
+
+void InitMem() { for(int i=0;i<MAX_MEM;i++) g_mem[i].used=false; g_hasPend=false; }
+
+void StorePend(double &f[]) { for(int i=0;i<NN_IN;i++) g_pend[i]=f[i]; g_hasPend=true; }
+
+void AssignPend(ulong posId)
+{
+    if(!g_hasPend) return;
+    for(int i=0;i<MAX_MEM;i++)
+        if(!g_mem[i].used)
+        {
+            g_mem[i].posId=posId;
+            for(int j=0;j<NN_IN;j++) g_mem[i].feat[j]=g_pend[j];
+            g_mem[i].used=true; g_hasPend=false; return;
+        }
+    g_hasPend=false;
+}
+void OnClose(ulong posId, double profit)
+{
+    for(int i=0;i<MAX_MEM;i++)
+        if(g_mem[i].used && g_mem[i].posId==posId)
+        {
+            double f[NN_IN]; for(int j=0;j<NN_IN;j++) f[j]=g_mem[i].feat[j];
+            g_mem[i].used=false;
+            LearnFromTrade(f,profit);
+            LogClose(posId,profit);
+            return;
+        }
+}
+bool HasTrade()
+{
+    for(int i=PositionsTotal()-1;i>=0;i--)
+        if(PositionGetSymbol(i)==_Symbol &&
+           (int)PositionGetInteger(POSITION_MAGIC)==InpMagicNumber) return true;
+    return false;
+}
+void OpenTrade(Signal &sig, double lots, double score, double &feat[])
+{
+    MqlTradeRequest req; MqlTradeResult res;
+    ZeroMemory(req); ZeroMemory(res);
+    req.symbol=_Symbol; req.magic=InpMagicNumber; req.volume=lots;
+    req.type_filling=ORDER_FILLING_FOK;
+    req.sl=sig.slPrice; req.tp=sig.tp1Price;
+    req.comment=StringFormat("BTAI s=%.2f",score);
+    if(sig.direction==1){ req.type=ORDER_TYPE_BUY;  req.price=SymbolInfoDouble(_Symbol,SYMBOL_ASK); }
+    else                { req.type=ORDER_TYPE_SELL; req.price=SymbolInfoDouble(_Symbol,SYMBOL_BID); }
+    if(OrderSend(req,res))
+    { tradesToday++; StorePend(feat); LogOpen(sig,lots,score,res.order); }
+    else Print("OrderSend failed: ",res.retcode," ",res.comment);
+}
+void ManageTrades()
+{
+    for(int i=PositionsTotal()-1;i>=0;i--)
+    {
+        if(PositionGetSymbol(i)!=_Symbol) continue;
+        if((int)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
+        ulong  tk =(ulong)PositionGetInteger(POSITION_TICKET);
+        double en =PositionGetDouble(POSITION_PRICE_OPEN);
+        double sl =PositionGetDouble(POSITION_SL);
+        double tp =PositionGetDouble(POSITION_TP);
+        bool isBuy=((int)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+        double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+        double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        bool hitTP = isBuy?(bid>=tp):(ask<=tp);
+        bool notBE = isBuy?(sl<en):(sl>en);
+        if(hitTP && notBE)
+        {
+            MqlTradeRequest r; MqlTradeResult rs; ZeroMemory(r); ZeroMemory(rs);
+            r.action=TRADE_ACTION_SLTP; r.position=tk;
+            r.symbol=_Symbol; r.sl=en; r.tp=tp;
+            OrderSend(r,rs);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SESSION FILTER
+// ═══════════════════════════════════════════════════════════════
+bool InSession()
+{
+    int h=TimeHour(TimeCurrent());
+    return ((h>=InpLondonStartHour && h<InpLondonEndHour)||
+            (h>=InpNYStartHour     && h<InpNYEndHour));
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN EA HANDLERS
+// ═══════════════════════════════════════════════════════════════
+int OnInit()
+{
+    InitRisk();
+    InitLogger();
+    InitMem();
+    InitAI(InpAI_ModelFile);
+    return INIT_SUCCEEDED;
+}
+
+void OnDeinit(const int reason)
+{
+    SaveModel(InpAI_ModelFile);
+    CloseLogger();
+}
+
+void OnTick()
+{
+    if(!IsNewBar())   return;
+    if(!InSession())  return;
+    if(LimitHit())    return;
+    if(HasTrade())    return;
+
+    ManageTrades();
+
+    Signal sig;
+    if(!GetBreakoutTrendSignal(sig)) return;
+
+    double feat[NN_IN];
+    BuildFeatures(sig,feat);
+    UpdateScaler(feat);
+
+    double score=GetSignalScore(feat);
+    if(score<InpAI_Threshold){ LogSkip(sig,score); return; }
+
+    double slPips=CalcSLPips(sig);
+    if(slPips<1.0) return;
+
+    double lots=CalcLots(InpRiskPercentPerTrade,slPips);
+    OpenTrade(sig,lots,score,feat);
+}
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest     &request,
+                        const MqlTradeResult      &result)
+{
+    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD) return;
+    if(!HistoryDealSelect(trans.deal)) return;
+    if((int)HistoryDealGetInteger(trans.deal,DEAL_MAGIC)!=InpMagicNumber) return;
+    long  entry=(long)HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
+    ulong posId=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+    if(entry==DEAL_ENTRY_IN)
+        AssignPend(posId);
+    else if(entry==DEAL_ENTRY_OUT||entry==DEAL_ENTRY_INOUT)
+    {
+        double profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT)
+                     +HistoryDealGetDouble(trans.deal,DEAL_SWAP)
+                     +HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
+        OnClose(posId,profit);
+    }
+}
