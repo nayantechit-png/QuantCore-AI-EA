@@ -28,6 +28,11 @@ input int    InpSaveEveryNTrades     = 5;
 
 input int    InpMagicNumber          = 787878;
 
+// Dashboard live state (updated every bar)
+double   g_lastScore = 0.0;
+int      g_lastDir   = 0;
+datetime g_lastSigT  = 0;
+
 // ═══════════════════════════════════════════════════════════════
 //  INDICATORS  (handle-based – required in MQL5)
 // ═══════════════════════════════════════════════════════════════
@@ -435,6 +440,181 @@ double CalcLots(double riskPct, double slPips)
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════════════
+#define DP    "BTAI_"    // object name prefix
+#define DB_X  20         // panel left edge
+#define DB_Y  20         // panel top edge
+#define DB_W  295        // panel width
+#define DB_LH 17         // line height
+
+color C_BG  = C'15,19,29';
+color C_HDR = C'25,33,52';
+color C_SEP = C'40,52,78';
+color C_WHT = C'208,216,228';
+color C_GRN = C'42,200,95';
+color C_RED = C'215,62,62';
+color C_YEL = C'215,178,42';
+color C_BLU = C'62,132,215';
+color C_DIM = C'90,105,126';
+
+void _R(string n,int x,int y,int w,int h,color bg,color brd=clrNONE)
+{
+    string nm=DP+n;
+    if(ObjectFind(0,nm)<0)
+    {
+        ObjectCreate(0,nm,OBJ_RECTANGLE_LABEL,0,0,0);
+        ObjectSetInteger(0,nm,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+        ObjectSetInteger(0,nm,OBJPROP_SELECTABLE,false);
+        ObjectSetInteger(0,nm,OBJPROP_HIDDEN,true);
+        ObjectSetInteger(0,nm,OBJPROP_BACK,false);
+    }
+    ObjectSetInteger(0,nm,OBJPROP_XDISTANCE,x);
+    ObjectSetInteger(0,nm,OBJPROP_YDISTANCE,y);
+    ObjectSetInteger(0,nm,OBJPROP_XSIZE,w);
+    ObjectSetInteger(0,nm,OBJPROP_YSIZE,h);
+    ObjectSetInteger(0,nm,OBJPROP_BGCOLOR,bg);
+    ObjectSetInteger(0,nm,OBJPROP_BORDER_COLOR,brd==clrNONE?bg:brd);
+    ObjectSetInteger(0,nm,OBJPROP_BORDER_TYPE,BORDER_FLAT);
+}
+
+void _L(string n,string txt,int x,int y,color clr,int sz=9)
+{
+    string nm=DP+n;
+    if(ObjectFind(0,nm)<0)
+    {
+        ObjectCreate(0,nm,OBJ_LABEL,0,0,0);
+        ObjectSetInteger(0,nm,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+        ObjectSetInteger(0,nm,OBJPROP_ANCHOR,ANCHOR_LEFT_UPPER);
+        ObjectSetInteger(0,nm,OBJPROP_SELECTABLE,false);
+        ObjectSetInteger(0,nm,OBJPROP_HIDDEN,true);
+        ObjectSetInteger(0,nm,OBJPROP_BACK,false);
+        ObjectSetString(0,nm,OBJPROP_FONT,"Consolas");
+    }
+    ObjectSetString(0,nm,OBJPROP_TEXT,txt);
+    ObjectSetInteger(0,nm,OBJPROP_COLOR,clr);
+    ObjectSetInteger(0,nm,OBJPROP_FONTSIZE,sz);
+    ObjectSetInteger(0,nm,OBJPROP_XDISTANCE,x);
+    ObjectSetInteger(0,nm,OBJPROP_YDISTANCE,y);
+}
+
+void DestroyDashboard()
+{
+    ObjectsDeleteAll(0,DP);
+    ChartRedraw(0);
+}
+
+void UpdateDashboard()
+{
+    double equity    = AccountInfoDouble(ACCOUNT_EQUITY);
+    double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
+    double dailyPnL  = equity - g_dailyEq;
+    double weeklyPnL = equity - g_weeklyEq;
+    double dailyPct  = (g_dailyEq  > 0) ? dailyPnL  / g_dailyEq  * 100.0 : 0.0;
+    double weekPct   = (g_weeklyEq > 0) ? weeklyPnL / g_weeklyEq * 100.0 : 0.0;
+    bool   canTrade  = !LimitHit();
+
+    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+    int hr = dt.hour;
+    string sessStr; color sessClr;
+    if(hr>=InpLondonStartHour && hr<InpLondonEndHour)
+        { sessStr="● LONDON  08-11 UTC";  sessClr=C_GRN; }
+    else if(hr>=InpNYStartHour && hr<InpNYEndHour)
+        { sessStr="● NEW YORK 14-17 UTC"; sessClr=C_BLU; }
+    else
+        { sessStr="○ MARKET CLOSED";      sessClr=C_DIM; }
+
+    int lx = DB_X+10;    // label column
+    int vx = DB_X+160;   // value column
+
+    // ── Panel + header ───────────────────────────────────────
+    _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 438, C_BG, C_SEP);
+    _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
+    _L("TIT", "  BREAKOUT TREND AI",      lx, DB_Y,    C_WHT, 10);
+    _L("SUB", "  Self-Learning EA  v2.0", lx, DB_Y+15, C_DIM,  8);
+
+    int y = DB_Y + 46;
+
+    // ── Status block ─────────────────────────────────────────
+    _R("SBG", DB_X-8, y-4, DB_W+16, DB_LH*3+14, C'20,26,40');
+    _L("l_sta","STATUS",    lx, y, C_DIM, 9);
+    _L("v_sta","● RUNNING", vx, y, C_GRN, 9);  y+=DB_LH;
+    _L("l_sym","SYMBOL",    lx, y, C_DIM, 9);
+    _L("v_sym",_Symbol,     vx, y, C_WHT, 9);  y+=DB_LH;
+    _L("l_ses","SESSION",   lx, y, C_DIM, 9);
+    _L("v_ses",sessStr,     vx, y, sessClr, 9); y+=DB_LH+8;
+
+    // ── AI Engine ────────────────────────────────────────────
+    _L("h_ai","── AI ENGINE ─────────────────────", lx, y, C_BLU, 8); y+=DB_LH;
+
+    _L("l_stp","Train Steps",  lx, y, C_DIM, 9);
+    _L("v_stp",IntegerToString(g_trainSteps), vx, y, C_WHT, 9); y+=DB_LH;
+
+    color sclr=(g_lastScore>=InpAI_Threshold)?C_GRN:C_YEL;
+    _L("l_sc","Last Score",    lx, y, C_DIM, 9);
+    _L("v_sc",DoubleToString(g_lastScore,3),  vx, y, sclr, 9); y+=DB_LH;
+
+    _L("l_thr","Threshold",    lx, y, C_DIM, 9);
+    _L("v_thr",DoubleToString(InpAI_Threshold,2), vx, y, C_DIM, 9); y+=DB_LH;
+
+    string dirtxt=(g_lastDir==1)?"BUY  ▲":(g_lastDir==-1)?"SELL ▼":"---";
+    color  dirclr=(g_lastDir==1)?C_GRN:(g_lastDir==-1)?C_RED:C_DIM;
+    _L("l_dir","Last Signal",  lx, y, C_DIM, 9);
+    _L("v_dir",dirtxt,         vx, y, dirclr, 9); y+=DB_LH;
+
+    string stime=(g_lastSigT>0)?TimeToString(g_lastSigT,TIME_SECONDS):"--:--:--";
+    _L("l_st","Signal Time",   lx, y, C_DIM, 9);
+    _L("v_st",stime,           vx, y, C_DIM, 9); y+=DB_LH+8;
+
+    // ── Account ──────────────────────────────────────────────
+    _L("h_ac","── ACCOUNT ───────────────────────", lx, y, C_BLU, 8); y+=DB_LH;
+
+    _L("l_eq","Equity",    lx, y, C_DIM, 9);
+    _L("v_eq","$"+DoubleToString(equity,2),  vx, y, C_WHT, 9); y+=DB_LH;
+    _L("l_bl","Balance",   lx, y, C_DIM, 9);
+    _L("v_bl","$"+DoubleToString(balance,2), vx, y, C_WHT, 9); y+=DB_LH;
+
+    string dpStr=(dailyPnL>=0?"+":"")+DoubleToString(dailyPnL,2)+
+                 "  ("+(dailyPct>=0?"+":"")+DoubleToString(dailyPct,2)+"%)";
+    _L("l_dp","Daily P&L",  lx, y, C_DIM, 9);
+    _L("v_dp",dpStr,         vx, y, (dailyPnL>=0)?C_GRN:C_RED, 9); y+=DB_LH;
+
+    string wpStr=(weeklyPnL>=0?"+":"")+DoubleToString(weeklyPnL,2)+
+                 "  ("+(weekPct>=0?"+":"")+DoubleToString(weekPct,2)+"%)";
+    _L("l_wp","Weekly P&L", lx, y, C_DIM, 9);
+    _L("v_wp",wpStr,         vx, y, (weeklyPnL>=0)?C_GRN:C_RED, 9); y+=DB_LH+8;
+
+    // ── Risk Monitor ─────────────────────────────────────────
+    _L("h_rk","── RISK MONITOR ──────────────────", lx, y, C_BLU, 8); y+=DB_LH;
+
+    double dUsed=MathAbs(MathMin(dailyPct,0.0));
+    color  dLC=(dUsed>=InpMaxDailyLossPercent*0.8)?C_RED:(dUsed>=InpMaxDailyLossPercent*0.5)?C_YEL:C_GRN;
+    _L("l_dl","Daily Loss",  lx, y, C_DIM, 9);
+    _L("v_dl",DoubleToString(dUsed,2)+"% / "+DoubleToString(InpMaxDailyLossPercent,1)+"%",
+              vx, y, dLC, 9); y+=DB_LH;
+
+    double wUsed=MathAbs(MathMin(weekPct,0.0));
+    color  wLC=(wUsed>=InpMaxWeeklyLossPercent*0.8)?C_RED:(wUsed>=InpMaxWeeklyLossPercent*0.5)?C_YEL:C_GRN;
+    _L("l_wl","Weekly Loss", lx, y, C_DIM, 9);
+    _L("v_wl",DoubleToString(wUsed,2)+"% / "+DoubleToString(InpMaxWeeklyLossPercent,1)+"%",
+              vx, y, wLC, 9); y+=DB_LH;
+
+    _L("l_tr","Trades Today",lx, y, C_DIM, 9);
+    _L("v_tr",IntegerToString(tradesToday)+" / "+IntegerToString(InpMaxTradesPerDay),
+              vx, y, C_WHT, 9); y+=DB_LH;
+
+    string canStr=canTrade?"● CAN TRADE":"● LIMIT HIT";
+    _L("l_ct","Trade Status",lx, y, C_DIM, 9);
+    _L("v_ct",canStr,         vx, y, canTrade?C_GRN:C_RED, 9); y+=DB_LH+6;
+
+    // ── Footer ───────────────────────────────────────────────
+    _R("FTR", DB_X-8, y, DB_W+16, 1, C_SEP);  y+=5;
+    _L("v_ts",TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS), lx, y, C_DIM, 8);
+
+    ChartRedraw(0);
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  LOGGER
 // ═══════════════════════════════════════════════════════════════
 int g_log=INVALID_HANDLE;
@@ -575,6 +755,7 @@ int OnInit()
     InitLogger();
     InitMem();
     InitAI(InpAI_ModelFile);
+    UpdateDashboard();
     return INIT_SUCCEEDED;
 }
 
@@ -583,16 +764,20 @@ void OnDeinit(const int reason)
     SaveModel(InpAI_ModelFile);
     CloseLogger();
     ReleaseIndicators();
+    DestroyDashboard();
 }
 
 void OnTick()
 {
-    if(!IsNewBar())   return;
+    if(!IsNewBar()) return;
+
+    UpdateDashboard();
+
     if(!InSession())  return;
     if(LimitHit())    return;
-    if(HasTrade())    return;
 
     ManageTrades();
+    if(HasTrade())    return;
 
     Signal sig;
     if(!GetBreakoutTrendSignal(sig)) return;
@@ -602,13 +787,18 @@ void OnTick()
     UpdateScaler(feat);
 
     double score=GetSignalScore(feat);
-    if(score<InpAI_Threshold){ LogSkip(sig,score); return; }
+    g_lastScore = score;
+    g_lastDir   = sig.direction;
+    g_lastSigT  = TimeCurrent();
+
+    if(score<InpAI_Threshold){ LogSkip(sig,score); UpdateDashboard(); return; }
 
     double slPips=CalcSLPips(sig);
     if(slPips<1.0) return;
 
     double lots=CalcLots(InpRiskPercentPerTrade,slPips);
     OpenTrade(sig,lots,score,feat);
+    UpdateDashboard();
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,
