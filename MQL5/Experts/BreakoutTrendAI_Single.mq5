@@ -306,7 +306,8 @@ void LearnFromTrade(double &features[], double profit)
 {
     double norm[NN_IN]; NormFeatures(features,norm);
     double score=ForwardPass(norm);
-    double pct=(AccountEquity()>0)?profit/AccountEquity()*100.0:0.0;
+    double eq=AccountInfoDouble(ACCOUNT_EQUITY);
+    double pct=(eq>0)?profit/eq*100.0:0.0;
     double label=NN_Sig(pct*20.0);
     Backprop(label);
     Print("AI | step=",g_trainSteps,
@@ -383,11 +384,13 @@ int    tradesToday=0;
 
 void InitRisk()
 {
-    g_dailyEq=AccountEquity(); g_weeklyEq=AccountEquity(); tradesToday=0;
+    g_dailyEq=AccountInfoDouble(ACCOUNT_EQUITY);
+    g_weeklyEq=AccountInfoDouble(ACCOUNT_EQUITY);
+    tradesToday=0;
 }
 bool LimitHit()
 {
-    double eq=AccountEquity();
+    double eq=AccountInfoDouble(ACCOUNT_EQUITY);
     if(g_dailyEq>0  && (eq-g_dailyEq) /g_dailyEq *100<=-InpMaxDailyLossPercent)  return true;
     if(g_weeklyEq>0 && (eq-g_weeklyEq)/g_weeklyEq*100<=-InpMaxWeeklyLossPercent) return true;
     if(tradesToday>=InpMaxTradesPerDay) return true;
@@ -400,7 +403,7 @@ double CalcLots(double riskPct, double slPips)
     double ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
     double pv=(ts>0)?tv*(_Point/ts):tv;
     if(pv<1e-10) return 0.01;
-    double lot=AccountEquity()*riskPct/100.0/(slPips*pv);
+    double lot=AccountInfoDouble(ACCOUNT_EQUITY)*riskPct/100.0/(slPips*pv);
     double mn=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
     double mx=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
     double st=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
@@ -520,7 +523,8 @@ void ManageTrades()
             MqlTradeRequest r; MqlTradeResult rs; ZeroMemory(r); ZeroMemory(rs);
             r.action=TRADE_ACTION_SLTP; r.position=tk;
             r.symbol=_Symbol; r.sl=en; r.tp=tp;
-            OrderSend(r,rs);
+            if(!OrderSend(r,rs))
+                Print("BE-stop failed: ",rs.retcode);
         }
     }
 }
@@ -530,7 +534,9 @@ void ManageTrades()
 // ═══════════════════════════════════════════════════════════════
 bool InSession()
 {
-    int h=TimeHour(TimeCurrent());
+    MqlDateTime dt;
+    TimeToStruct(TimeCurrent(), dt);
+    int h = dt.hour;
     return ((h>=InpLondonStartHour && h<InpLondonEndHour)||
             (h>=InpNYStartHour     && h<InpNYEndHour));
 }
