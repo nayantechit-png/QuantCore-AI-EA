@@ -29,20 +29,43 @@ input int    InpSaveEveryNTrades     = 5;
 input int    InpMagicNumber          = 787878;
 
 // ═══════════════════════════════════════════════════════════════
-//  INDICATORS
+//  INDICATORS  (handle-based – required in MQL5)
 // ═══════════════════════════════════════════════════════════════
-double GetATR(int period = 14)
+int g_hATR14  = INVALID_HANDLE;
+int g_hEMA50  = INVALID_HANDLE;
+int g_hEMA200 = INVALID_HANDLE;
+int g_hRSI14  = INVALID_HANDLE;
+
+bool InitIndicators()
 {
-    return iATR(_Symbol, PERIOD_CURRENT, period, 0);
+    g_hATR14  = iATR(_Symbol, PERIOD_CURRENT, 14);
+    g_hEMA50  = iMA (_Symbol, PERIOD_CURRENT, 50,  0, MODE_EMA, PRICE_CLOSE);
+    g_hEMA200 = iMA (_Symbol, PERIOD_CURRENT, 200, 0, MODE_EMA, PRICE_CLOSE);
+    g_hRSI14  = iRSI(_Symbol, PERIOD_CURRENT, 14, PRICE_CLOSE);
+    return (g_hATR14  != INVALID_HANDLE && g_hEMA50  != INVALID_HANDLE &&
+            g_hEMA200 != INVALID_HANDLE && g_hRSI14  != INVALID_HANDLE);
 }
-double GetEMA(int period)
+void ReleaseIndicators()
 {
-    return iMA(_Symbol, PERIOD_CURRENT, period, 0, MODE_EMA, PRICE_CLOSE, 0);
+    if(g_hATR14  != INVALID_HANDLE){ IndicatorRelease(g_hATR14);  g_hATR14  = INVALID_HANDLE; }
+    if(g_hEMA50  != INVALID_HANDLE){ IndicatorRelease(g_hEMA50);  g_hEMA50  = INVALID_HANDLE; }
+    if(g_hEMA200 != INVALID_HANDLE){ IndicatorRelease(g_hEMA200); g_hEMA200 = INVALID_HANDLE; }
+    if(g_hRSI14  != INVALID_HANDLE){ IndicatorRelease(g_hRSI14);  g_hRSI14  = INVALID_HANDLE; }
 }
-double GetRSI(int period = 14)
+
+double GetBuf(int handle, int shift = 0)
 {
-    return iRSI(_Symbol, PERIOD_CURRENT, period, PRICE_CLOSE, 0);
+    if(handle == INVALID_HANDLE) return 0.0;
+    double buf[1];
+    ArraySetAsSeries(buf, true);
+    if(CopyBuffer(handle, 0, shift, 1, buf) <= 0) return 0.0;
+    return buf[0];
 }
+
+double GetATR(int period = 14)  { return GetBuf(g_hATR14);  }
+double GetEMA(int period)       { return (period<=50) ? GetBuf(g_hEMA50) : GetBuf(g_hEMA200); }
+double GetRSI(int period = 14)  { return GetBuf(g_hRSI14);  }
+
 double GetSpreadPoints()
 {
     return (SymbolInfoDouble(_Symbol, SYMBOL_ASK) -
@@ -168,7 +191,7 @@ double NN_RelD(double x) { return x>0?1.0:0.0; }
 double NN_Gauss()
 {
     double u1=(MathRand()+1.0)/32769.0, u2=(MathRand()+1.0)/32769.0;
-    return MathSqrt(-2.0*MathLog(u1))*MathCos(2.0*MathPi()*u2);
+    return MathSqrt(-2.0*MathLog(u1))*MathCos(2.0*3.14159265358979323846*u2);
 }
 void NN_Xavier(double &W[], int sz, int fan)
 { double s=MathSqrt(2.0/fan); for(int i=0;i<sz;i++) W[i]=NN_Gauss()*s; }
@@ -546,6 +569,8 @@ bool InSession()
 // ═══════════════════════════════════════════════════════════════
 int OnInit()
 {
+    if(!InitIndicators())
+    { Print("Failed to create indicator handles"); return INIT_FAILED; }
     InitRisk();
     InitLogger();
     InitMem();
@@ -557,6 +582,7 @@ void OnDeinit(const int reason)
 {
     SaveModel(InpAI_ModelFile);
     CloseLogger();
+    ReleaseIndicators();
 }
 
 void OnTick()
