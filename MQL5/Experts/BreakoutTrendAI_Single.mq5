@@ -56,7 +56,7 @@ void ReleaseIndicators()
 double GetBuf(int handle, int shift = 0)
 {
     if(handle == INVALID_HANDLE) return 0.0;
-    double buf[1];
+    double buf[];
     ArraySetAsSeries(buf, true);
     if(CopyBuffer(handle, 0, shift, 1, buf) <= 0) return 0.0;
     return buf[0];
