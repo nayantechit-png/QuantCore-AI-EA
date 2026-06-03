@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.3"
+#property version "2.4"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -606,7 +606,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.3 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.4 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -622,8 +622,12 @@ void UpdateDashboard()
     // ── AI Engine ────────────────────────────────────────────
     _L("h_ai","── AI ENGINE ─────────────────────", lx, y, C_BLU, 8); y+=DB_LH;
 
+    color stpClr = (g_trainSteps < 10) ? C_YEL : C_WHT;
+    string stpStr = (g_trainSteps < 10)
+        ? IntegerToString(g_trainSteps) + " (BOOTSTRAP)"
+        : IntegerToString(g_trainSteps);
     _L("l_stp","Train Steps",  lx, y, C_DIM, 9);
-    _L("v_stp",IntegerToString(g_trainSteps), vx, y, C_WHT, 9); y+=DB_LH;
+    _L("v_stp", stpStr,        vx, y, stpClr, 9); y+=DB_LH;
 
     color sclr=(g_lastScore>=InpAI_Threshold)?C_GRN:C_YEL;
     _L("l_sc","Last Score",    lx, y, C_DIM, 9);
@@ -955,9 +959,16 @@ void OnTick()
     g_lastDir    = sig.direction;
     g_lastSigT   = TimeCurrent();
 
-    if(score < InpAI_Threshold)
+    // Bootstrap mode: model untrained (<10 steps) → trade on trend+breakout
+    // alone so the AI gets real trade outcomes to learn from.
+    // Once trained, normal threshold applies.
+    double effectiveThreshold = (g_trainSteps < 10) ? 0.40 : InpAI_Threshold;
+
+    if(score < effectiveThreshold)
     {
-        g_lastReason = StringFormat("SCORE LOW %.3f", score);
+        g_lastReason = (g_trainSteps < 10)
+            ? StringFormat("BOOTSTRAP %.3f", score)
+            : StringFormat("SCORE LOW %.3f", score);
         LogSkip(sig, score);
         UpdateDashboard();
         return;
