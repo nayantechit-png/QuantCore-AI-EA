@@ -16,7 +16,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "QuantCore"
 #property link        "https://github.com/QuantCore/QuantCore-AI-EA"
-#property version     "1.00"
+#property version     "1.10"
 #property description "AI ensemble EA for prop firm challenges — Forex & Gold"
 #property strict
 
@@ -745,7 +745,7 @@ void UpdateDashboard()
    // ── HEADER ─────────────────────────────────────────────────────
    int ry = Y;
    _QR("QC_HDR0", X, ry, W, LH + 6, QC_HDR, clrNONE);
-   _QL("QC_TITLE", "QUANTCORE AI  v1.0",  X + 8,       ry + 4, QC_WHT, 10);
+   _QL("QC_TITLE", "QUANTCORE AI  v1.1 | 2026-06-03",  X + 8, ry + 4, QC_WHT, 9);
    color  stClr = g_TradingAllowed ? QC_GRN : QC_RED;
    string stTxt = g_TradingAllowed ? "● ACTIVE" : "■ STOPPED";
    _QL("QC_STAT",  stTxt,                 X + W - 88,  ry + 4, stClr, 9);

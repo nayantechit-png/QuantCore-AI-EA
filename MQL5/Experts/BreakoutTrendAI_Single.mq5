@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.0"
+#property version "2.1"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -603,8 +603,8 @@ void UpdateDashboard()
     // ── Panel + header ───────────────────────────────────────
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 438, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
-    _L("TIT", "  BREAKOUT TREND AI",      lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.0", lx, DB_Y+15, C_DIM,  8);
+    _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
+    _L("SUB", "  Self-Learning EA  v2.1 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
