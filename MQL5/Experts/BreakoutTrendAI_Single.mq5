@@ -36,34 +36,42 @@ datetime g_lastSigT  = 0;
 // ═══════════════════════════════════════════════════════════════
 //  INDICATORS  (handle-based – required in MQL5)
 // ═══════════════════════════════════════════════════════════════
-int g_hATR14  = INVALID_HANDLE;
-int g_hEMA50  = INVALID_HANDLE;
-int g_hEMA200 = INVALID_HANDLE;
-int g_hRSI14  = INVALID_HANDLE;
+int g_hATR14    = INVALID_HANDLE;
+int g_hEMA50    = INVALID_HANDLE;
+int g_hEMA200   = INVALID_HANDLE;
+int g_hRSI14    = INVALID_HANDLE;
+int g_hBB20     = INVALID_HANDLE;   // Bollinger Bands (squeeze detector)
+int g_hEMA50_H1 = INVALID_HANDLE;   // H1 EMA50 (MTF trend filter)
 
 bool InitIndicators()
 {
-    g_hATR14  = iATR(_Symbol, PERIOD_CURRENT, 14);
-    g_hEMA50  = iMA (_Symbol, PERIOD_CURRENT, 50,  0, MODE_EMA, PRICE_CLOSE);
-    g_hEMA200 = iMA (_Symbol, PERIOD_CURRENT, 200, 0, MODE_EMA, PRICE_CLOSE);
-    g_hRSI14  = iRSI(_Symbol, PERIOD_CURRENT, 14, PRICE_CLOSE);
-    return (g_hATR14  != INVALID_HANDLE && g_hEMA50  != INVALID_HANDLE &&
-            g_hEMA200 != INVALID_HANDLE && g_hRSI14  != INVALID_HANDLE);
+    g_hATR14    = iATR  (_Symbol, PERIOD_CURRENT, 14);
+    g_hEMA50    = iMA   (_Symbol, PERIOD_CURRENT, 50,  0, MODE_EMA, PRICE_CLOSE);
+    g_hEMA200   = iMA   (_Symbol, PERIOD_CURRENT, 200, 0, MODE_EMA, PRICE_CLOSE);
+    g_hRSI14    = iRSI  (_Symbol, PERIOD_CURRENT, 14, PRICE_CLOSE);
+    g_hBB20     = iBands(_Symbol, PERIOD_CURRENT, 20, 0, 2.0, PRICE_CLOSE);
+    g_hEMA50_H1 = iMA   (_Symbol, PERIOD_H1,      50,  0, MODE_EMA, PRICE_CLOSE);
+    return (g_hATR14  != INVALID_HANDLE && g_hEMA50    != INVALID_HANDLE &&
+            g_hEMA200 != INVALID_HANDLE && g_hRSI14    != INVALID_HANDLE &&
+            g_hBB20   != INVALID_HANDLE && g_hEMA50_H1 != INVALID_HANDLE);
 }
 void ReleaseIndicators()
 {
-    if(g_hATR14  != INVALID_HANDLE){ IndicatorRelease(g_hATR14);  g_hATR14  = INVALID_HANDLE; }
-    if(g_hEMA50  != INVALID_HANDLE){ IndicatorRelease(g_hEMA50);  g_hEMA50  = INVALID_HANDLE; }
-    if(g_hEMA200 != INVALID_HANDLE){ IndicatorRelease(g_hEMA200); g_hEMA200 = INVALID_HANDLE; }
-    if(g_hRSI14  != INVALID_HANDLE){ IndicatorRelease(g_hRSI14);  g_hRSI14  = INVALID_HANDLE; }
+    if(g_hATR14    != INVALID_HANDLE){ IndicatorRelease(g_hATR14);    g_hATR14    = INVALID_HANDLE; }
+    if(g_hEMA50    != INVALID_HANDLE){ IndicatorRelease(g_hEMA50);    g_hEMA50    = INVALID_HANDLE; }
+    if(g_hEMA200   != INVALID_HANDLE){ IndicatorRelease(g_hEMA200);   g_hEMA200   = INVALID_HANDLE; }
+    if(g_hRSI14    != INVALID_HANDLE){ IndicatorRelease(g_hRSI14);    g_hRSI14    = INVALID_HANDLE; }
+    if(g_hBB20     != INVALID_HANDLE){ IndicatorRelease(g_hBB20);     g_hBB20     = INVALID_HANDLE; }
+    if(g_hEMA50_H1 != INVALID_HANDLE){ IndicatorRelease(g_hEMA50_H1); g_hEMA50_H1 = INVALID_HANDLE; }
 }
 
-double GetBuf(int handle, int shift = 0)
+// bufIdx: 0=main, 1=upper/+DI, 2=lower/-DI (matches MT5 buffer numbering)
+double GetBuf(int handle, int bufIdx = 0, int shift = 0)
 {
     if(handle == INVALID_HANDLE) return 0.0;
     double buf[];
     ArraySetAsSeries(buf, true);
-    if(CopyBuffer(handle, 0, shift, 1, buf) <= 0) return 0.0;
+    if(CopyBuffer(handle, bufIdx, shift, 1, buf) <= 0) return 0.0;
     return buf[0];
 }
 
@@ -82,8 +90,41 @@ bool GetRange(double &high, double &low, int lookback = 20)
     int lo = iLowest (_Symbol, PERIOD_CURRENT, MODE_LOW,  lookback, 1);
     high = iHigh(_Symbol, PERIOD_CURRENT, hi);
     low  = iLow (_Symbol, PERIOD_CURRENT, lo);
-    double pts = (high - low) / _Point;
-    return (pts >= 15.0 && pts <= 80.0);
+    double atr = GetATR(14);
+    if(atr < _Point) return false;
+    double rangeATR = (high - low) / atr;
+    // Valid consolidation box: 0.5x – 5x ATR (works on all instruments/timeframes)
+    return (rangeATR >= 0.5 && rangeATR <= 5.0);
+}
+
+// Nearest swing high within lookback bars (strength = bars each side must be lower)
+double SwingHigh(int lookback = 60, int strength = 3)
+{
+    for(int i = strength + 1; i < lookback; i++)
+    {
+        double h = iHigh(_Symbol, PERIOD_CURRENT, i);
+        bool ok = true;
+        for(int j = 1; j <= strength && ok; j++)
+            if(iHigh(_Symbol, PERIOD_CURRENT, i - j) >= h ||
+               iHigh(_Symbol, PERIOD_CURRENT, i + j) >= h) ok = false;
+        if(ok) return h;
+    }
+    return 0.0;
+}
+
+// Nearest swing low within lookback bars
+double SwingLow(int lookback = 60, int strength = 3)
+{
+    for(int i = strength + 1; i < lookback; i++)
+    {
+        double l = iLow(_Symbol, PERIOD_CURRENT, i);
+        bool ok = true;
+        for(int j = 1; j <= strength && ok; j++)
+            if(iLow(_Symbol, PERIOD_CURRENT, i - j) <= l ||
+               iLow(_Symbol, PERIOD_CURRENT, i + j) <= l) ok = false;
+        if(ok) return l;
+    }
+    return 0.0;
 }
 bool IsNewBar()
 {
@@ -264,7 +305,32 @@ void BuildFeatures(const Signal &sig, double &f[])
     f[23]=(sig.entryPrice-sig.rangeHigh)/atr;
     f[24]=(sig.entryPrice-sig.rangeLow)/atr;
     f[25]=(c0-iClose(_Symbol,PERIOD_CURRENT,10))/atr;
-    for(int i=26;i<32;i++) f[i]=0.0;
+
+    // ── S/R + advanced features (f[26..31]) ─────────────────────
+    // f[26] distance from price to nearest swing high (negative = above resistance)
+    double sHigh = SwingHigh(60, 3);
+    f[26] = (sHigh > 0) ? (c0 - sHigh) / atr : 0.0;
+
+    // f[27] distance from price to nearest swing low (positive = above support)
+    double sLow = SwingLow(60, 3);
+    f[27] = (sLow > 0) ? (c0 - sLow) / atr : 0.0;
+
+    // f[28] Bollinger Band width / ATR — squeeze = low value, expansion = breakout
+    double bbU = GetBuf(g_hBB20, 1);
+    double bbL = GetBuf(g_hBB20, 2);
+    f[28] = (atr > 0) ? (bbU - bbL) / atr : 1.0;
+
+    // f[29] H1 trend: price vs H1 EMA50 (+1 bullish, -1 bearish)
+    double ema50h1 = GetBuf(g_hEMA50_H1);
+    f[29] = (c0 > ema50h1) ? 1.0 : -1.0;
+
+    // f[30] previous day high distance (above = breakout of daily resistance)
+    double dayHigh = iHigh(_Symbol, PERIOD_D1, 1);
+    f[30] = (dayHigh > 0 && atr > 0) ? (c0 - dayHigh) / atr : 0.0;
+
+    // f[31] previous day low distance (positive = price above daily support)
+    double dayLow = iLow(_Symbol, PERIOD_D1, 1);
+    f[31] = (dayLow > 0 && atr > 0) ? (c0 - dayLow) / atr : 0.0;
 }
 
 // ── Forward pass ─────────────────────────────────────────────
