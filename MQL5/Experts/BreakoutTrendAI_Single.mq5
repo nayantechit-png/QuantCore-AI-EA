@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.1"
+#property version "2.2"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -29,9 +29,10 @@ input int    InpSaveEveryNTrades     = 5;
 input int    InpMagicNumber          = 787878;
 
 // Dashboard live state (updated every bar)
-double   g_lastScore = 0.0;
-int      g_lastDir   = 0;
-datetime g_lastSigT  = 0;
+double   g_lastScore  = 0.0;
+int      g_lastDir    = 0;
+datetime g_lastSigT   = 0;
+string   g_lastReason = "INIT";
 
 // ═══════════════════════════════════════════════════════════════
 //  INDICATORS  (handle-based – required in MQL5)
@@ -149,21 +150,21 @@ struct Signal
     double rangeLow;
 };
 
+// Use H1 EMA50 as trend filter — avoids the M15 EMA50/200 cross
+// which takes days/weeks and prevents all signals from firing.
 bool IsUptrend()
 {
-    double close  = iClose(_Symbol, PERIOD_CURRENT, 0);
-    double ema50  = GetEMA(50);
-    double ema200 = GetEMA(200);
-    double rsi    = GetRSI(14);
-    return (close > ema200 && ema50 > ema200 && rsi > 50.0);
+    double close    = iClose(_Symbol, PERIOD_CURRENT, 1);   // last closed M15 bar
+    double ema50_h1 = GetBuf(g_hEMA50_H1);
+    double rsi      = GetRSI(14);
+    return (ema50_h1 > 0 && close > ema50_h1 && rsi > 45.0);
 }
 bool IsDowntrend()
 {
-    double close  = iClose(_Symbol, PERIOD_CURRENT, 0);
-    double ema50  = GetEMA(50);
-    double ema200 = GetEMA(200);
-    double rsi    = GetRSI(14);
-    return (close < ema200 && ema50 < ema200 && rsi < 50.0);
+    double close    = iClose(_Symbol, PERIOD_CURRENT, 1);
+    double ema50_h1 = GetBuf(g_hEMA50_H1);
+    double rsi      = GetRSI(14);
+    return (ema50_h1 > 0 && close < ema50_h1 && rsi < 55.0);
 }
 bool GetBreakoutTrendSignal(Signal &sig)
 {
@@ -601,10 +602,10 @@ void UpdateDashboard()
     int vx = DB_X+160;   // value column
 
     // ── Panel + header ───────────────────────────────────────
-    _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 438, C_BG, C_SEP);
+    _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.1 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.2 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -637,7 +638,12 @@ void UpdateDashboard()
 
     string stime=(g_lastSigT>0)?TimeToString(g_lastSigT,TIME_SECONDS):"--:--:--";
     _L("l_st","Signal Time",   lx, y, C_DIM, 9);
-    _L("v_st",stime,           vx, y, C_DIM, 9); y+=DB_LH+8;
+    _L("v_st",stime,           vx, y, C_DIM, 9); y+=DB_LH;
+
+    color rsnClr = (StringFind(g_lastReason,"OPEN")>=0)?C_GRN:
+                   (StringFind(g_lastReason,"TRADE")>=0)?C_YEL:C_DIM;
+    _L("l_rs","Reason",        lx, y, C_DIM, 9);
+    _L("v_rs",g_lastReason,    vx, y, rsnClr, 9); y+=DB_LH+8;
 
     // ── Account ──────────────────────────────────────────────
     _L("h_ac","── ACCOUNT ───────────────────────", lx, y, C_BLU, 8); y+=DB_LH;
@@ -898,34 +904,75 @@ void OnTick()
 {
     if(!IsNewBar()) return;
 
-    UpdateDashboard();
     DrawChartLevels();   // refresh S/R lines every bar
 
-    if(!InSession())  return;
-    if(LimitHit())    return;
+    if(!InSession())
+    {
+        g_lastReason = "OUT OF SESSION";
+        UpdateDashboard();
+        return;
+    }
+    if(LimitHit())
+    {
+        g_lastReason = "LIMIT HIT";
+        UpdateDashboard();
+        return;
+    }
 
     ManageTrades();
-    if(HasTrade())    return;
+    if(HasTrade())
+    {
+        g_lastReason = "TRADE OPEN";
+        UpdateDashboard();
+        return;
+    }
+
+    // Evaluate trend first for informative reason display
+    bool upOK   = IsUptrend();
+    bool downOK = IsDowntrend();
+    if(!upOK && !downOK)
+    {
+        g_lastReason = "NO TREND (H1 EMA50)";
+        UpdateDashboard();
+        return;
+    }
 
     Signal sig;
-    if(!GetBreakoutTrendSignal(sig)) return;
+    if(!GetBreakoutTrendSignal(sig))
+    {
+        g_lastReason = "NO BREAKOUT";
+        UpdateDashboard();
+        return;
+    }
 
     double feat[NN_IN];
-    BuildFeatures(sig,feat);
+    BuildFeatures(sig, feat);
     UpdateScaler(feat);
 
-    double score=GetSignalScore(feat);
-    g_lastScore = score;
-    g_lastDir   = sig.direction;
-    g_lastSigT  = TimeCurrent();
+    double score = GetSignalScore(feat);
+    g_lastScore  = score;
+    g_lastDir    = sig.direction;
+    g_lastSigT   = TimeCurrent();
 
-    if(score<InpAI_Threshold){ LogSkip(sig,score); UpdateDashboard(); return; }
+    if(score < InpAI_Threshold)
+    {
+        g_lastReason = StringFormat("SCORE LOW %.3f", score);
+        LogSkip(sig, score);
+        UpdateDashboard();
+        return;
+    }
 
-    double slPips=CalcSLPips(sig);
-    if(slPips<1.0) return;
+    double slPips = CalcSLPips(sig);
+    if(slPips < 1.0)
+    {
+        g_lastReason = "SL TOO SMALL";
+        UpdateDashboard();
+        return;
+    }
 
-    double lots=CalcLots(InpRiskPercentPerTrade,slPips);
-    OpenTrade(sig,lots,score,feat);
+    g_lastReason = "OPENING TRADE";
+    double lots = CalcLots(InpRiskPercentPerTrade, slPips);
+    OpenTrade(sig, lots, score, feat);
     UpdateDashboard();
 }
 
