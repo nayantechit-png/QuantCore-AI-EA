@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.2"
+#property version "2.3"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -87,14 +87,15 @@ double GetSpreadPoints()
 }
 bool GetRange(double &high, double &low, int lookback = 20)
 {
-    int hi = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, lookback, 1);
-    int lo = iLowest (_Symbol, PERIOD_CURRENT, MODE_LOW,  lookback, 1);
+    // start=2: range is bars 2–21, so bar 1's close can actually break above/below it.
+    // start=1 (old) included bar 1 itself → close1 <= high[1] ≤ range_high → NEVER a breakout.
+    int hi = iHighest(_Symbol, PERIOD_CURRENT, MODE_HIGH, lookback, 2);
+    int lo = iLowest (_Symbol, PERIOD_CURRENT, MODE_LOW,  lookback, 2);
     high = iHigh(_Symbol, PERIOD_CURRENT, hi);
     low  = iLow (_Symbol, PERIOD_CURRENT, lo);
     double atr = GetATR(14);
     if(atr < _Point) return false;
     double rangeATR = (high - low) / atr;
-    // Valid consolidation box: 0.5x – 5x ATR (works on all instruments/timeframes)
     return (rangeATR >= 0.5 && rangeATR <= 5.0);
 }
 
@@ -605,7 +606,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.2 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.3 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 

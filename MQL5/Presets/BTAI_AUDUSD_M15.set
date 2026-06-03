@@ -1,0 +1,26 @@
+; BreakoutTrendAI v2.3 — AUDUSD M15
+; Profile : Prop Firm (FTMO / GoatFunded / MFF)
+; Risk    : 0.50% — AUDUSD had PF 14.78 on live GoatFunded account
+; SL      : 1.5x ATR — tighter spread, clean technical levels
+; AI      : 0.54 threshold — lower bar to capture more breakouts on AUD
+; Sessions: London + NY (AUD also moves in Asia, but best in London)
+; Note    : Best performer from live report — prioritise this pair
+; Magic   : 787876  ← unique per pair
+
+InpRiskPercentPerTrade=0.50
+InpMaxDailyLossPercent=3.50
+InpMaxWeeklyLossPercent=6.00
+InpMaxTradesPerDay=4
+InpSL_ATR_Multiplier=1.50
+InpTP1_R_Multiple=1.00
+InpTP2_R_Multiple=2.50
+InpLondonStartHour=7
+InpLondonEndHour=16
+InpNYStartHour=13
+InpNYEndHour=21
+InpAI_Threshold=0.54
+InpAI_ModelFile=btai_audusd.dat
+InpLearningRate=0.001
+InpMomentum=0.90
+InpSaveEveryNTrades=5
+InpMagicNumber=787876
