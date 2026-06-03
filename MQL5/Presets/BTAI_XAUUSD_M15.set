@@ -1,8 +1,9 @@
-; BreakoutTrendAI v2.0 — XAUUSD M15 (Gold)
+; BreakoutTrendAI v2.5 — XAUUSD M15 (Gold)
 ; Profile : Prop Firm (FTMO / GoatFunded / MFF)
 ; Risk    : 0.35% per trade — Gold has large ATR, risk stays controlled
 ; SL      : 2.0x ATR — Gold needs breathing room (spike risk)
 ; AI      : 0.60 threshold — highest confidence required for Gold
+; Session : Asia 00-09 (Shanghai Gold fix) + London 07-16 + NY 13-21 UTC
 ; Magic   : 787873  ← unique per pair
 
 InpRiskPercentPerTrade=0.35
@@ -12,6 +13,9 @@ InpMaxTradesPerDay=3
 InpSL_ATR_Multiplier=2.00
 InpTP1_R_Multiple=1.00
 InpTP2_R_Multiple=2.50
+InpTradeAsia=true
+InpAsiaStartHour=0
+InpAsiaEndHour=9
 InpLondonStartHour=7
 InpLondonEndHour=16
 InpNYStartHour=13

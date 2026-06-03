@@ -1,9 +1,9 @@
-; BreakoutTrendAI v2.3 — GBPJPY M15
+; BreakoutTrendAI v2.5 — GBPJPY M15
 ; Profile : Prop Firm (FTMO / GoatFunded / MFF)
 ; Risk    : 0.35% — GBPJPY has large ATR spikes, keep risk tight
 ; SL      : 2.0x ATR — needs room for JPY spread + volatility
 ; AI      : 0.58 threshold — filters false breakouts on volatile cross
-; Sessions: London + NY (best GBPJPY liquidity 07-16, 13-21 UTC)
+; Session : Asia 00-09 + London 07-16 + NY 13-21 UTC
 ; Magic   : 787875  ← unique per pair
 
 InpRiskPercentPerTrade=0.35
@@ -13,6 +13,9 @@ InpMaxTradesPerDay=3
 InpSL_ATR_Multiplier=2.00
 InpTP1_R_Multiple=1.00
 InpTP2_R_Multiple=2.50
+InpTradeAsia=true
+InpAsiaStartHour=0
+InpAsiaEndHour=9
 InpLondonStartHour=7
 InpLondonEndHour=16
 InpNYStartHour=13

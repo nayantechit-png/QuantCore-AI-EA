@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.4"
+#property version "2.5"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -14,6 +14,9 @@ input double InpSL_ATR_Multiplier    = 1.5;
 input double InpTP1_R_Multiple       = 1.0;
 input double InpTP2_R_Multiple       = 2.5;
 
+input bool   InpTradeAsia            = false; // Trade Asian session (00:00-09:00 UTC)
+input int    InpAsiaStartHour        = 0;    // Asia open  (UTC)
+input int    InpAsiaEndHour          = 9;    // Asia close (UTC)
 input int    InpLondonStartHour      = 7;    // London open  (UTC)
 input int    InpLondonEndHour        = 16;   // London close (UTC)
 input int    InpNYStartHour          = 13;   // NY open      (UTC)
@@ -584,6 +587,7 @@ void UpdateDashboard()
 
     MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
     int hr = dt.hour;
+    bool inAsia   = InpTradeAsia && (hr >= InpAsiaStartHour && hr < InpAsiaEndHour);
     bool inLondon = (hr >= InpLondonStartHour && hr < InpLondonEndHour);
     bool inNY     = (hr >= InpNYStartHour     && hr < InpNYEndHour);
     string sessStr; color sessClr;
@@ -596,6 +600,9 @@ void UpdateDashboard()
     else if(inNY)
         { sessStr=StringFormat("● NEW YORK %02d-%02d UTC", InpNYStartHour, InpNYEndHour);
           sessClr=C_BLU; }
+    else if(inAsia)
+        { sessStr=StringFormat("● ASIA     %02d-%02d UTC", InpAsiaStartHour, InpAsiaEndHour);
+          sessClr=C'80,160,255'; }
     else
         { sessStr="○ MARKET CLOSED";      sessClr=C_DIM; }
 
@@ -606,7 +613,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.4 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.5 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -824,8 +831,10 @@ bool InSession()
     MqlDateTime dt;
     TimeToStruct(TimeCurrent(), dt);
     int h = dt.hour;
-    return ((h>=InpLondonStartHour && h<InpLondonEndHour)||
-            (h>=InpNYStartHour     && h<InpNYEndHour));
+    bool asia   = InpTradeAsia && (h>=InpAsiaStartHour && h<InpAsiaEndHour);
+    bool london = (h>=InpLondonStartHour && h<InpLondonEndHour);
+    bool ny     = (h>=InpNYStartHour     && h<InpNYEndHour);
+    return (asia || london || ny);
 }
 
 // ═══════════════════════════════════════════════════════════════
