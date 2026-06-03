@@ -16,7 +16,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "QuantCore"
 #property link        "https://github.com/QuantCore/QuantCore-AI-EA"
-#property version     "1.10"
+#property version     "1.20"
 #property description "AI ensemble EA for prop firm challenges — Forex & Gold"
 #property strict
 
@@ -34,13 +34,14 @@ CPositionInfo  PosInfo;
 input group "════ PROP FIRM RISK LIMITS ════"
 input double Inp_MaxDailyLoss   = 4.5;    // Max daily loss %  (prop limit - buffer)
 input double Inp_MaxTotalLoss   = 9.0;    // Max total loss %  (prop limit - buffer)
-input double Inp_RiskPerTrade   = 0.75;   // Risk per trade %
+input double Inp_RiskPerTrade   = 0.50;   // Risk per trade %
 input double Inp_ProfitLockAt   = 6.0;    // Activate profit-lock at equity gain %
 input double Inp_ProfitLockDD   = 1.0;    // Max drawdown after profit-lock (%)
 
 input group "════ AI SIGNAL ENGINE ════"
-input double Inp_MinScore       = 0.62;   // Min combined score to enter  [0.0–1.0]
+input double Inp_MinScore       = 0.68;   // Min combined score to enter  [0.0–1.0]
 input double Inp_MinScoreMTF    = 0.55;   // Min H4 confirmation score
+input double Inp_MinADX         = 18.0;   // Min ADX to enter (skip flat/choppy markets)
 input int    Inp_EMA_Fast       = 20;     // Fast EMA
 input int    Inp_EMA_Mid        = 50;     // Mid EMA
 input int    Inp_EMA_Slow       = 200;    // Slow EMA
@@ -55,7 +56,7 @@ input double Inp_SL_ATR_Mult    = 1.5;   // Stop loss  × ATR
 input double Inp_TP_ATR_Mult    = 3.0;   // Take profit × ATR   (2:1 min RR)
 input bool   Inp_TrailingStop   = true;  // Enable ATR trailing stop
 input double Inp_Trail_ATR      = 1.0;   // Trailing stop distance × ATR
-input int    Inp_MaxPositions   = 3;     // Max simultaneous positions
+input int    Inp_MaxPositions   = 2;     // Max simultaneous positions
 
 input group "════ KALMAN FILTER ════"
 input double Inp_KF_Delta       = 0.0001; // Process noise  (smaller = smoother)
@@ -90,7 +91,8 @@ bool   g_TradingAllowed  = true;
 string g_StopReason      = "";
 
 // Kalman filter state
-double kf_theta   = 0;   // estimated trend (slope)
+double kf_price   = 0;   // estimated price level (state)
+double kf_vel     = 0;   // estimated trend velocity (derived signal)
 double kf_P       = 1;   // error covariance
 double kf_Vw      = 0;   // process noise (computed from delta)
 double kf_Ve      = 0;   // measurement noise
@@ -287,22 +289,25 @@ void OnTick()
 
    int openCount = CountOpenPositions();
 
-   // ── EXIT logic (check existing positions) ─────────────────────
+   // ── EXIT logic (reversal signal) ──────────────────────────────
+   // Require a STRONGER signal to close than to enter (avoids cutting
+   // winners during brief consolidation bounces).
+   double exitThreshold = Inp_MinScore + 0.08;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       if(!PosInfo.SelectByIndex(i)) continue;
       if(PosInfo.Magic() != Trade.RequestMagic()) continue;
       if(PosInfo.Symbol() != _Symbol) continue;
 
-      if(PosInfo.PositionType() == POSITION_TYPE_BUY && bearScore > Inp_MinScore)
+      if(PosInfo.PositionType() == POSITION_TYPE_BUY && bearScore >= exitThreshold)
         {
          Trade.PositionClose(PosInfo.Ticket());
-         Print("QuantCore: Closing BUY — bear signal reversed (", DoubleToString(bearScore,3), ")");
+         Print("QuantCore: Closing BUY — bear reversal (", DoubleToString(bearScore,3), ")");
         }
-      else if(PosInfo.PositionType() == POSITION_TYPE_SELL && bullScore > Inp_MinScore)
+      else if(PosInfo.PositionType() == POSITION_TYPE_SELL && bullScore >= exitThreshold)
         {
          Trade.PositionClose(PosInfo.Ticket());
-         Print("QuantCore: Closing SELL — bull signal reversed (", DoubleToString(bullScore,3), ")");
+         Print("QuantCore: Closing SELL — bull reversal (", DoubleToString(bullScore,3), ")");
         }
      }
 
@@ -319,6 +324,11 @@ void OnTick()
    double tp_dist = atrVal * Inp_TP_ATR_Mult;
 
    string sessName = ActiveSessionName(dt.hour);
+
+   // ADX filter: skip entries in flat/choppy markets
+   double adxEntry[];
+   if(CopyBuffer(h_ADX, 0, 1, 1, adxEntry) < 1) return;
+   if(adxEntry[0] < Inp_MinADX) return;
 
    if(bullScore >= dynMinScore && !HasPosition(POSITION_TYPE_BUY))
      {
@@ -386,11 +396,11 @@ bool CalcSignalScores(double &bullScore, double &bearScore)
    if(CopyBuffer(h_Stoch, 1, 1, 1, stochD) < 1) return false;
 
    double momBull = 0, momBear = 0;
-   // RSI
-   if(rsi[0] > 50 && rsi[0] < 70) momBull += 0.4;
-   else if(rsi[0] > 30 && rsi[0] <= 50) momBear += 0.2;
-   else if(rsi[0] <= 30) momBull += 0.3;   // oversold — potential reversal
-   else if(rsi[0] >= 70) momBear += 0.3;   // overbought — potential reversal
+   // RSI — symmetric scoring (was asymmetric: bull got 0.4 vs bear 0.2)
+   if(rsi[0] > 55 && rsi[0] < 70) momBull += 0.35;      // bullish momentum
+   else if(rsi[0] > 30 && rsi[0] < 45) momBear += 0.35; // bearish momentum
+   else if(rsi[0] <= 30) momBull += 0.25;   // oversold bounce
+   else if(rsi[0] >= 70) momBear += 0.25;   // overbought fade
    // Stochastic
    if(stochK[0] > stochD[0] && stochK[0] < 80) momBull += 0.3;
    if(stochK[0] < stochD[0] && stochK[0] > 20) momBear += 0.3;
@@ -421,18 +431,16 @@ bool CalcSignalScores(double &bullScore, double &bearScore)
      }
 
    // ── 4. KALMAN SCORE (trend direction + confidence) ─────────────
-   double kalmanBull = 0, kalmanBear = 0;
-   if(kf_theta > 0)
+   // Normalize velocity by ATR so the confidence is meaningful across all pairs
+   double atr_k[];
+   double kalmanBull = 0.5, kalmanBear = 0.5;   // default neutral
+   if(CopyBuffer(h_ATR, 0, 1, 1, atr_k) >= 1 && atr_k[0] > 0)
      {
-      double conf = MathMin(MathAbs(kf_theta) / (0.001 + 1e-9), 1.0);
-      kalmanBull = 0.5 + conf * 0.5;
-      kalmanBear = 1.0 - kalmanBull;
-     }
-   else
-     {
-      double conf = MathMin(MathAbs(kf_theta) / (0.001 + 1e-9), 1.0);
-      kalmanBear = 0.5 + conf * 0.5;
-      kalmanBull = 1.0 - kalmanBear;
+      double conf = MathMin(MathAbs(kf_vel) / (atr_k[0] * 0.05 + 1e-10), 1.0);
+      if(kf_vel > 0)
+        { kalmanBull = 0.5 + conf * 0.5; kalmanBear = 1.0 - kalmanBull; }
+      else
+        { kalmanBear = 0.5 + conf * 0.5; kalmanBull = 1.0 - kalmanBear; }
      }
 
    // ── 5. MULTI-TIMEFRAME SCORE (H4 confirmation) ─────────────────
@@ -474,27 +482,29 @@ void UpdateKalmanOnTick()
 
    if(!kf_Init)
      {
-      kf_theta = price;
+      kf_price = price;
+      kf_vel   = 0;
       kf_P     = 1.0;
       kf_Init  = true;
       return;
      }
 
-   // Predict
-   double P_pred = kf_P + kf_Vw;
+   // Predict (track price level)
+   double P_pred    = kf_P + kf_Vw;
 
-   // Innovation
-   double innov = price - kf_theta;
+   // Innovation = distance from predicted price to actual price
+   double innov = price - kf_price;
 
    // Kalman gain
    double K = P_pred / (P_pred + kf_Ve);
 
-   // Update
-   double theta_new = kf_theta + K * innov;
-   kf_P   = (1.0 - K) * P_pred;
+   // Update price estimate and error covariance
+   double price_new = kf_price + K * innov;
+   kf_P             = (1.0 - K) * P_pred;
 
-   // Store velocity (slope) as the signal
-   kf_theta = theta_new - kf_theta;   // delta = trend direction
+   // Velocity = change in Kalman price estimate (smoothed slope)
+   kf_vel   = price_new - kf_price;
+   kf_price = price_new;
   }
 
 //──────────────────────────────────────────────────────────────────
@@ -504,7 +514,10 @@ void UpdateKalmanOnTick()
 double CalcLotSize(double sl_distance_price)
   {
    double balance    = AccountInfoDouble(ACCOUNT_BALANCE);
-   double risk_money = balance * Inp_RiskPerTrade / 100.0;
+   double equity     = AccountInfoDouble(ACCOUNT_EQUITY);
+   // Hard cap: never risk more than 1% of equity on a single trade regardless of inputs
+   double max_risk   = equity * 0.01;
+   double risk_money = MathMin(balance * Inp_RiskPerTrade / 100.0, max_risk);
 
    double tick_val   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tick_size  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
@@ -745,7 +758,7 @@ void UpdateDashboard()
    // ── HEADER ─────────────────────────────────────────────────────
    int ry = Y;
    _QR("QC_HDR0", X, ry, W, LH + 6, QC_HDR, clrNONE);
-   _QL("QC_TITLE", "QUANTCORE AI  v1.1 | 2026-06-03",  X + 8, ry + 4, QC_WHT, 9);
+   _QL("QC_TITLE", "QUANTCORE AI  v1.2 | 2026-06-03",  X + 8, ry + 4, QC_WHT, 9);
    color  stClr = g_TradingAllowed ? QC_GRN : QC_RED;
    string stTxt = g_TradingAllowed ? "● ACTIVE" : "■ STOPPED";
    _QL("QC_STAT",  stTxt,                 X + W - 88,  ry + 4, stClr, 9);
