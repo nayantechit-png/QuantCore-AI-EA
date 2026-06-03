@@ -172,7 +172,7 @@ int OnInit()
    g_TradingAllowed  = true;
 
    // Trade settings
-   Trade.SetExpertMagicNumber(20240101);
+   Trade.SetExpertMagicNumber((ulong)20240101);
    Trade.SetDeviationInPoints(20);
    Trade.SetTypeFilling(ORDER_FILLING_FOK);
 
@@ -771,11 +771,11 @@ void UpdateDashboard()
    ry += LH;
 
    // ── KALMAN DIRECTION ───────────────────────────────────────────
-   string kDir = kf_theta > 0 ? "▲ BULL" : (kf_theta < 0 ? "▼ BEAR" : "── FLAT");
-   color  kClr = kf_theta > 0 ? QC_GRN  : (kf_theta < 0 ? QC_RED  : QC_DIM);
+   string kDir = kf_vel > 0 ? "▲ BULL" : (kf_vel < 0 ? "▼ BEAR" : "── FLAT");
+   color  kClr = kf_vel > 0 ? QC_GRN  : (kf_vel < 0 ? QC_RED  : QC_DIM);
    _QR("QC_R2", X, ry, W, LH, QC_BG, clrNONE);
-   _QL("QC_KDIR", "KF   " + kDir,              X + 8,       ry + 3, kClr, 9);
-   _QL("QC_KVAL", DoubleToString(kf_theta, 6),  X + W - 110, ry + 3, QC_DIM, 8);
+   _QL("QC_KDIR", "KF   " + kDir,             X + 8,       ry + 3, kClr, 9);
+   _QL("QC_KVAL", DoubleToString(kf_vel, 6),   X + W - 110, ry + 3, QC_DIM, 8);
    ry += LH;
 
    _QR("QC_SEP1", X, ry, W, 1, QC_HDR, clrNONE); ry += 5;
