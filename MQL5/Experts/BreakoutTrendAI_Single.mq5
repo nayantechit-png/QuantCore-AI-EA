@@ -820,15 +820,68 @@ bool InSession()
 // ═══════════════════════════════════════════════════════════════
 //  MAIN EA HANDLERS
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  CHART VISUAL LEVELS
+// ═══════════════════════════════════════════════════════════════
+
+void DrawHLine(string name, double price, color clr,
+               ENUM_LINE_STYLE style = STYLE_SOLID, int width = 1)
+{
+    string n = "BTAI_LV_" + name;
+    if(ObjectFind(0, n) < 0)
+        ObjectCreate(0, n, OBJ_HLINE, 0, 0, price);
+    ObjectSetDouble (0, n, OBJPROP_PRICE,      price);
+    ObjectSetInteger(0, n, OBJPROP_COLOR,      clr);
+    ObjectSetInteger(0, n, OBJPROP_STYLE,      style);
+    ObjectSetInteger(0, n, OBJPROP_WIDTH,      width);
+    ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
+    ObjectSetInteger(0, n, OBJPROP_HIDDEN,     true);
+    ObjectSetString (0, n, OBJPROP_TOOLTIP,    name);
+}
+
+void DrawChartLevels()
+{
+    double atr = GetATR(14);
+    if(atr < _Point) return;
+
+    // ── Consolidation range (20-bar high/low) ─────────────────
+    double rHigh, rLow;
+    if(GetRange(rHigh, rLow))
+    {
+        DrawHLine("RangeHigh", rHigh, C'42,200,95',  STYLE_SOLID, 2);   // green
+        DrawHLine("RangeLow",  rLow,  C'215,62,62',  STYLE_SOLID, 2);   // red
+    }
+
+    // ── Swing S/R (60-bar lookback) ───────────────────────────
+    double sH = SwingHigh(60, 3);
+    double sL = SwingLow (60, 3);
+    if(sH > 0) DrawHLine("SwingHigh", sH, C'62,132,215', STYLE_DOT, 1);  // blue dotted
+    if(sL > 0) DrawHLine("SwingLow",  sL, C'215,178,42', STYLE_DOT, 1);  // yellow dotted
+
+    // ── Previous day high/low ─────────────────────────────────
+    double dH = iHigh(_Symbol, PERIOD_D1, 1);
+    double dL = iLow (_Symbol, PERIOD_D1, 1);
+    if(dH > 0) DrawHLine("DayHigh", dH, C'180,100,220', STYLE_DASH, 1);  // purple dashed
+    if(dL > 0) DrawHLine("DayLow",  dL, C'180,100,220', STYLE_DASH, 1);  // purple dashed
+
+    ChartRedraw(0);
+}
+
 int OnInit()
 {
     if(!InitIndicators())
     { Print("Failed to create indicator handles"); return INIT_FAILED; }
+
+    // Show EMA50 and EMA200 as coloured lines on the main chart
+    ChartIndicatorAdd(0, 0, g_hEMA50);
+    ChartIndicatorAdd(0, 0, g_hEMA200);
+
     InitRisk();
     InitLogger();
     InitMem();
     InitAI(InpAI_ModelFile);
     UpdateDashboard();
+    DrawChartLevels();
     return INIT_SUCCEEDED;
 }
 
@@ -838,6 +891,7 @@ void OnDeinit(const int reason)
     CloseLogger();
     ReleaseIndicators();
     DestroyDashboard();
+    ObjectsDeleteAll(0, "BTAI_LV_");   // remove all level lines
 }
 
 void OnTick()
@@ -845,6 +899,7 @@ void OnTick()
     if(!IsNewBar()) return;
 
     UpdateDashboard();
+    DrawChartLevels();   // refresh S/R lines every bar
 
     if(!InSession())  return;
     if(LimitHit())    return;
