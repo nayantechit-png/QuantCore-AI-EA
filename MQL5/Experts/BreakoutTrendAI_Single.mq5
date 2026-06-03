@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.5"
+#property version "2.6"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -511,6 +511,17 @@ double CalcLots(double riskPct, double slPips)
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  SAFEGUARD LINK  (reads lock set by SafeGuard_EA via GlobalVariable)
+// ═══════════════════════════════════════════════════════════════
+bool SafeGuardLocked()
+{
+    string key = "SAFEGUARD_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN));
+    if(!GlobalVariableCheck(key)) return false;
+    datetime until = (datetime)GlobalVariableGet(key);
+    return (TimeCurrent() < until);
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  DASHBOARD
 // ═══════════════════════════════════════════════════════════════
 #define DP    "BTAI_"    // object name prefix
@@ -613,7 +624,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.5 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.6 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -929,6 +940,12 @@ void OnTick()
     if(LimitHit())
     {
         g_lastReason = "LIMIT HIT";
+        UpdateDashboard();
+        return;
+    }
+    if(SafeGuardLocked())
+    {
+        g_lastReason = "SAFEGUARD LOCKED";
         UpdateDashboard();
         return;
     }
