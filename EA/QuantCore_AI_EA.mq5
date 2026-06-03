@@ -208,12 +208,25 @@ bool IsOverlapHour(int hour)
 string ActiveSessionName(int hour)
   {
    string s = "";
-   if(hour >= 0  && hour < 9)  s += "Asia ";
-   if(hour >= 7  && hour < 16) s += "London ";
-   if(hour >= 12 && hour < 16) s += "[OVERLAP] ";
-   if(hour >= 13 && hour < 21) s += "NewYork ";
-   if(StringLen(s) == 0)       s =  "Closed";
+   if(Inp_TradeAsia    && hour >= 0  && hour < 9)  s += "Asia ";
+   if(Inp_TradeLondon  && hour >= 7  && hour < 16) s += "London ";
+   if(hour >= 13 && hour < 16)                     s += "[OVERLAP] ";
+   if(Inp_TradeNewYork && hour >= 13 && hour < 21) s += "NewYork ";
+   if(StringLen(s) == 0)                           s =  "Closed";
    return StringTrimRight(s);
+  }
+
+// Session colour for dashboard: yellow=overlap, green=London, blue=NY, dim=closed
+color ActiveSessionColor(int hour)
+  {
+   bool lon = (Inp_TradeLondon  && hour >= 7  && hour < 16);
+   bool ny  = (Inp_TradeNewYork && hour >= 13 && hour < 21);
+   bool asi = (Inp_TradeAsia    && hour >= 0  && hour < 9);
+   if(lon && ny) return QC_YEL;
+   if(lon)       return QC_GRN;
+   if(ny)        return QC_BLU;
+   if(asi)       return C'80,160,255';
+   return QC_DIM;
   }
 
 void OnDeinit(const int reason)
@@ -741,7 +754,7 @@ void UpdateDashboard()
    // ── SYMBOL / SESSION ───────────────────────────────────────────
    _QR("QC_R1", X, ry, W, LH, QC_HDR, clrNONE);
    _QL("QC_SYM",  "SYM  " + _Symbol,     X + 8,       ry + 3, QC_BLU, 9);
-   _QL("QC_SES",  sessName,               X + W - 128, ry + 3, sessOpen ? QC_GRN : QC_DIM, 9);
+   _QL("QC_SES",  sessName,               X + W - 128, ry + 3, ActiveSessionColor(dt.hour), 9);
    ry += LH;
 
    // ── KALMAN DIRECTION ───────────────────────────────────────────

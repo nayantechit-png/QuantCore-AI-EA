@@ -14,10 +14,10 @@ input double InpSL_ATR_Multiplier    = 1.5;
 input double InpTP1_R_Multiple       = 1.0;
 input double InpTP2_R_Multiple       = 2.5;
 
-input int    InpLondonStartHour      = 8;
-input int    InpLondonEndHour        = 11;
-input int    InpNYStartHour          = 14;
-input int    InpNYEndHour            = 17;
+input int    InpLondonStartHour      = 7;    // London open  (UTC)
+input int    InpLondonEndHour        = 16;   // London close (UTC)
+input int    InpNYStartHour          = 13;   // NY open      (UTC)
+input int    InpNYEndHour            = 21;   // NY close     (UTC)
 
 input double InpAI_Threshold         = 0.55;
 input string InpAI_ModelFile         = "btai_model.dat";
@@ -516,11 +516,18 @@ void UpdateDashboard()
 
     MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
     int hr = dt.hour;
+    bool inLondon = (hr >= InpLondonStartHour && hr < InpLondonEndHour);
+    bool inNY     = (hr >= InpNYStartHour     && hr < InpNYEndHour);
     string sessStr; color sessClr;
-    if(hr>=InpLondonStartHour && hr<InpLondonEndHour)
-        { sessStr="● LONDON  08-11 UTC";  sessClr=C_GRN; }
-    else if(hr>=InpNYStartHour && hr<InpNYEndHour)
-        { sessStr="● NEW YORK 14-17 UTC"; sessClr=C_BLU; }
+    if(inLondon && inNY)
+        { sessStr=StringFormat("● OVERLAP  %02d-%02d UTC", InpNYStartHour, InpLondonEndHour);
+          sessClr=C_YEL; }
+    else if(inLondon)
+        { sessStr=StringFormat("● LONDON   %02d-%02d UTC", InpLondonStartHour, InpLondonEndHour);
+          sessClr=C_GRN; }
+    else if(inNY)
+        { sessStr=StringFormat("● NEW YORK %02d-%02d UTC", InpNYStartHour, InpNYEndHour);
+          sessClr=C_BLU; }
     else
         { sessStr="○ MARKET CLOSED";      sessClr=C_DIM; }
 
