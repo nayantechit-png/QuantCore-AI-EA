@@ -1,0 +1,24 @@
+; BreakoutTrendAI v2.0 — GBPUSD M15
+; Profile : Prop Firm (FTMO / GoatFunded / MFF)
+; Risk    : 0.4% per trade — GBPUSD is wider spread + more volatile
+; SL      : 1.8x ATR — wider stop needed for GBP spikes
+; AI      : 0.57 threshold — filters more false breakouts on GBP
+; Magic   : 787872  ← unique per pair
+
+InpRiskPercentPerTrade=0.40
+InpMaxDailyLossPercent=3.50
+InpMaxWeeklyLossPercent=6.00
+InpMaxTradesPerDay=4
+InpSL_ATR_Multiplier=1.80
+InpTP1_R_Multiple=1.00
+InpTP2_R_Multiple=2.50
+InpLondonStartHour=7
+InpLondonEndHour=16
+InpNYStartHour=13
+InpNYEndHour=21
+InpAI_Threshold=0.57
+InpAI_ModelFile=btai_gbpusd.dat
+InpLearningRate=0.001
+InpMomentum=0.90
+InpSaveEveryNTrades=5
+InpMagicNumber=787872

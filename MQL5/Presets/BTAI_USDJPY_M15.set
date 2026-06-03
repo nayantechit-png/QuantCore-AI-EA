@@ -1,0 +1,23 @@
+; BreakoutTrendAI v2.0 — USDJPY M15
+; Profile : Prop Firm (FTMO / GoatFunded / MFF)
+; Risk    : 0.45% — moderate, JPY spreads are tight
+; Session : Includes Asian session (00-09 UTC) for JPY liquidity
+; Magic   : 787874  ← unique per pair
+
+InpRiskPercentPerTrade=0.45
+InpMaxDailyLossPercent=3.50
+InpMaxWeeklyLossPercent=6.00
+InpMaxTradesPerDay=4
+InpSL_ATR_Multiplier=1.50
+InpTP1_R_Multiple=1.00
+InpTP2_R_Multiple=2.50
+InpLondonStartHour=0
+InpLondonEndHour=9
+InpNYStartHour=13
+InpNYEndHour=21
+InpAI_Threshold=0.55
+InpAI_ModelFile=btai_usdjpy.dat
+InpLearningRate=0.001
+InpMomentum=0.90
+InpSaveEveryNTrades=5
+InpMagicNumber=787874

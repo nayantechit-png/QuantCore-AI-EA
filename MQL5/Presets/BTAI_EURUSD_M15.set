@@ -1,0 +1,23 @@
+; BreakoutTrendAI v2.0 — EURUSD M15
+; Profile : Prop Firm (FTMO / GoatFunded / MFF)
+; Risk    : 0.5% per trade | Daily limit 3.5% | Weekly 6%
+; Session : London 07-16 + NY 13-21 UTC
+; Magic   : 787871  ← unique per pair
+
+InpRiskPercentPerTrade=0.50
+InpMaxDailyLossPercent=3.50
+InpMaxWeeklyLossPercent=6.00
+InpMaxTradesPerDay=4
+InpSL_ATR_Multiplier=1.50
+InpTP1_R_Multiple=1.00
+InpTP2_R_Multiple=2.50
+InpLondonStartHour=7
+InpLondonEndHour=16
+InpNYStartHour=13
+InpNYEndHour=21
+InpAI_Threshold=0.55
+InpAI_ModelFile=btai_eurusd.dat
+InpLearningRate=0.001
+InpMomentum=0.90
+InpSaveEveryNTrades=5
+InpMagicNumber=787871
