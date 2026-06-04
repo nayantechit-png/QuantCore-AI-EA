@@ -1,18 +1,19 @@
-; QuantCore AI EA — GBPUSD H1 Optimised Settings
-; Session: NY + London-NY Overlap ONLY (12:00-21:00 UTC)
-; Backtest 2y: +20.6%  DD 4.4%  Sharpe 9.52  208 trades
-; DD is HALF of all-session run (8.1% → 4.4%) — safest for prop firm
+; QuantCore AI EA v1.30 — GBPUSD H1
+; LIVE REPORT FINDING: 15 trades, PF 1.24 — marginal but profitable
+; FIX: raise threshold slightly to 0.70, keep risk at 0.50%
+; Sessions: London + Overlap + NY (Asia OFF — GBP Asia = wide spreads)
 
 ; ════ PROP FIRM RISK ════
 Inp_MaxDailyLoss=4.5
 Inp_MaxTotalLoss=9.0
-Inp_RiskPerTrade=1.00
+Inp_RiskPerTrade=0.50
 Inp_ProfitLockAt=6.0
 Inp_ProfitLockDD=1.0
 
 ; ════ AI SIGNAL ENGINE ════
-Inp_MinScore=0.58
-Inp_MinScoreMTF=0.52
+Inp_MinScore=0.70
+Inp_MinScoreMTF=0.55
+Inp_MinADX=18.0
 Inp_EMA_Fast=20
 Inp_EMA_Mid=50
 Inp_EMA_Slow=200
@@ -23,19 +24,22 @@ Inp_ADX_Period=14
 Inp_ATR_Period=14
 
 ; ════ TRADE MANAGEMENT ════
-Inp_SL_ATR_Mult=1.5
-Inp_TP_ATR_Mult=3.5
+Inp_SL_ATR_Mult=1.6
+Inp_TP_ATR_Mult=3.0
 Inp_TrailingStop=true
-Inp_Trail_ATR=0.8
-Inp_MaxPositions=3
+Inp_Trail_ATR=1.2
+Inp_MaxPositions=2
+Inp_LongExtraScore=0.05
+
+; ════ CONSECUTIVE LOSS GUARD ════
+Inp_MaxConsecLoss=3
+Inp_ConsecPauseHours=4.0
 
 ; ════ KALMAN FILTER ════
 Inp_KF_Delta=0.0001
 Inp_KF_Ve=0.001
 
-; ════ TRADING SESSIONS (UTC) — NY + OVERLAP ONLY ════
-; GBP/USD Asia session → low liquidity, wide spreads → skip
-; London-NY overlap 12:00-16:00 is GBP's highest volume window
+; ════ TRADING SESSIONS (UTC) ════
 Inp_TradeAsia=false
 Inp_TradeLondon=true
 Inp_TradeNewYork=true

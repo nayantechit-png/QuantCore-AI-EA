@@ -16,7 +16,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "QuantCore"
 #property link        "https://github.com/QuantCore/QuantCore-AI-EA"
-#property version     "1.20"
+#property version     "1.30"
 #property description "AI ensemble EA for prop firm challenges — Forex & Gold"
 #property strict
 
@@ -55,8 +55,13 @@ input group "════ TRADE MANAGEMENT ════"
 input double Inp_SL_ATR_Mult    = 1.5;   // Stop loss  × ATR
 input double Inp_TP_ATR_Mult    = 3.0;   // Take profit × ATR   (2:1 min RR)
 input bool   Inp_TrailingStop   = true;  // Enable ATR trailing stop
-input double Inp_Trail_ATR      = 1.0;   // Trailing stop distance × ATR
+input double Inp_Trail_ATR      = 1.2;   // Trailing stop distance × ATR (wider = less premature exits)
 input int    Inp_MaxPositions   = 2;     // Max simultaneous positions
+input double Inp_LongExtraScore = 0.05;  // Extra score required for BUY entries (long bias fix)
+
+input group "════ CONSECUTIVE LOSS GUARD ════"
+input int    Inp_MaxConsecLoss     = 3;    // Pause trading after N consecutive losses
+input double Inp_ConsecPauseHours  = 4.0;  // Hours to pause after hitting limit
 
 input group "════ KALMAN FILTER ════"
 input double Inp_KF_Delta       = 0.0001; // Process noise  (smaller = smoother)
@@ -106,6 +111,11 @@ int h_EMA_Fast_H4, h_EMA_Slow_H4, h_RSI_H4;
 // Dashboard signal cache (updated each new bar)
 double g_LastBullScore = 0;
 double g_LastBearScore = 0;
+
+// Consecutive loss guard
+int      g_ConsecLosses     = 0;
+int      g_ConsecWins       = 0;
+datetime g_ConsecPausedUntil = 0;
 
 // Dashboard color palette
 #define QC_BG   C'15,19,29'
@@ -174,7 +184,7 @@ int OnInit()
    // Trade settings
    Trade.SetExpertMagicNumber((ulong)20240101);
    Trade.SetDeviationInPoints(20);
-   Trade.SetTypeFilling(ORDER_FILLING_FOK);
+   Trade.SetTypeFilling(GetFillingMode());  // auto-detect: FOK → IOC → RETURN
 
    Print("QuantCore AI EA initialized | Balance: ", g_StartBalance,
          " | MaxDailyLoss: ", Inp_MaxDailyLoss, "% | MaxTotalLoss: ", Inp_MaxTotalLoss, "%");
@@ -183,6 +193,14 @@ int OnInit()
   }
 
 ENUM_TIMEFRAMES Inp_ConfirmTF() { return PERIOD_H4; }
+
+ENUM_ORDER_TYPE_FILLING GetFillingMode()
+  {
+   int filling = (int)SymbolInfoInteger(_Symbol, SYMBOL_FILLING_MODE);
+   if((filling & SYMBOL_FILLING_FOK) != 0) return ORDER_FILLING_FOK;
+   if((filling & SYMBOL_FILLING_IOC) != 0) return ORDER_FILLING_IOC;
+   return ORDER_FILLING_RETURN;
+  }
 
 //──────────────────────────────────────────────────────────────────
 // SESSION HELPERS
@@ -314,6 +332,8 @@ void OnTick()
    // ── ENTRY logic ───────────────────────────────────────────────
    if(openCount >= Inp_MaxPositions) return;
    if(!g_TradingAllowed) return;
+   // Consecutive loss pause: skip new entries until pause expires
+   if(TimeCurrent() < g_ConsecPausedUntil) return;
 
    double atr[];
    if(CopyBuffer(h_ATR, 0, 1, 1, atr) < 1) return;
@@ -330,7 +350,8 @@ void OnTick()
    if(CopyBuffer(h_ADX, 0, 1, 1, adxEntry) < 1) return;
    if(adxEntry[0] < Inp_MinADX) return;
 
-   if(bullScore >= dynMinScore && !HasPosition(POSITION_TYPE_BUY))
+   // BUY requires extra margin (live report: longs win 41.67% vs shorts 56.1%)
+   if(bullScore >= dynMinScore + Inp_LongExtraScore && !HasPosition(POSITION_TYPE_BUY))
      {
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double sl  = ask - sl_dist;
@@ -658,6 +679,42 @@ bool CheckPropLimits()
   }
 
 //──────────────────────────────────────────────────────────────────
+// CONSECUTIVE LOSS GUARD  (OnTradeTransaction fires on every close)
+//──────────────────────────────────────────────────────────────────
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest     &request,
+                        const MqlTradeResult      &result)
+  {
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;
+   if(!HistoryDealSelect(trans.deal)) return;
+   if((long)HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != (long)Trade.RequestMagic()) return;
+   long entry = (long)HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_INOUT) return;
+
+   double profit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT)
+                 + HistoryDealGetDouble(trans.deal, DEAL_SWAP)
+                 + HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
+
+   if(profit >= 0)
+     {
+      g_ConsecLosses = 0;
+      g_ConsecWins++;
+     }
+   else
+     {
+      g_ConsecLosses++;
+      g_ConsecWins = 0;
+      if(g_ConsecLosses >= Inp_MaxConsecLoss)
+        {
+         g_ConsecPausedUntil = TimeCurrent() + (datetime)(Inp_ConsecPauseHours * 3600.0);
+         Print("QuantCore: ", g_ConsecLosses, " consecutive losses — pausing until ",
+               TimeToString(g_ConsecPausedUntil, TIME_DATE|TIME_SECONDS));
+        }
+     }
+  }
+
+//──────────────────────────────────────────────────────────────────
 // UTILITIES
 //──────────────────────────────────────────────────────────────────
 
@@ -758,7 +815,7 @@ void UpdateDashboard()
    // ── HEADER ─────────────────────────────────────────────────────
    int ry = Y;
    _QR("QC_HDR0", X, ry, W, LH + 6, QC_HDR, clrNONE);
-   _QL("QC_TITLE", "QUANTCORE AI  v1.2 | 2026-06-03",  X + 8, ry + 4, QC_WHT, 9);
+   _QL("QC_TITLE", "QUANTCORE AI  v1.3 | 2026-06-04",  X + 8, ry + 4, QC_WHT, 9);
    color  stClr = g_TradingAllowed ? QC_GRN : QC_RED;
    string stTxt = g_TradingAllowed ? "● ACTIVE" : "■ STOPPED";
    _QL("QC_STAT",  stTxt,                 X + W - 88,  ry + 4, stClr, 9);
@@ -854,11 +911,28 @@ void UpdateDashboard()
       _QL("QC_PKD", "", X + 8, ry + 3, QC_DIM, 9);
    ry += LH;
 
+   // Consecutive loss / pause row
+   bool paused = (TimeCurrent() < g_ConsecPausedUntil);
+   if(paused)
+     {
+      int secsLeft = (int)(g_ConsecPausedUntil - TimeCurrent());
+      int mLeft    = secsLeft / 60;
+      _QR("QC_CSLK", X, ry, W, LH, C'60,30,10', clrNONE);
+      _QL("QC_CSL",  StringFormat("CONSEC PAUSE  %dm left", mLeft), X + 8, ry + 3, QC_YEL, 9);
+     }
+   else
+     {
+      _QR("QC_CSLK", X, ry, W, LH, QC_BG, clrNONE);
+      _QL("QC_CSL",  StringFormat("CONSEC  L:%d  W:%d", g_ConsecLosses, g_ConsecWins),
+          X + 8, ry + 3, g_ConsecLosses > 0 ? QC_YEL : QC_DIM, 9);
+     }
+   ry += LH;
+
    // Stop reason row (always rendered; blank when no stop)
    if(StringLen(g_StopReason) > 0)
      {
       _QR("QC_STRK", X, ry, W, LH, C'60,20,20', clrNONE);
-      _QL("QC_STR",  "⚠  " + g_StopReason, X + 8, ry + 3, QC_RED, 9);
+      _QL("QC_STR",  "STOP: " + g_StopReason, X + 8, ry + 3, QC_RED, 9);
      }
    else
      {

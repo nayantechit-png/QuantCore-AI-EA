@@ -1,20 +1,19 @@
-; QuantCore AI EA v1.30 — EURUSD H1
-; LIVE REPORT FINDING: PF 0.30 (-$5,030 net), $963 commissions on 26 trades
-; ROOT CAUSE: threshold 0.58 was too loose → overtrading with poor selectivity
-; FIX: threshold raised to 0.76, risk halved to 0.40%, max 1 position
-; Sessions: London + Overlap + NY (Asia OFF — EURUSD Asia = wide spread, no edge)
+; QuantCore AI EA v1.30 — AUDUSD H1
+; LIVE REPORT: PF 14.78, $2,083.95 net profit — BEST PAIR in the account
+; Deploy on AUDUSD.x H1 chart with this preset
+; Sessions: London + Overlap + NY (Asia = AUD/China hours, optional)
 
 ; ════ PROP FIRM RISK ════
 Inp_MaxDailyLoss=4.5
 Inp_MaxTotalLoss=9.0
-Inp_RiskPerTrade=0.40
+Inp_RiskPerTrade=0.60
 Inp_ProfitLockAt=6.0
 Inp_ProfitLockDD=1.0
 
 ; ════ AI SIGNAL ENGINE ════
-Inp_MinScore=0.76
-Inp_MinScoreMTF=0.60
-Inp_MinADX=20.0
+Inp_MinScore=0.68
+Inp_MinScoreMTF=0.55
+Inp_MinADX=18.0
 Inp_EMA_Fast=20
 Inp_EMA_Mid=50
 Inp_EMA_Slow=200
@@ -29,7 +28,7 @@ Inp_SL_ATR_Mult=1.5
 Inp_TP_ATR_Mult=3.0
 Inp_TrailingStop=true
 Inp_Trail_ATR=1.2
-Inp_MaxPositions=1
+Inp_MaxPositions=2
 Inp_LongExtraScore=0.05
 
 ; ════ CONSECUTIVE LOSS GUARD ════
@@ -41,7 +40,7 @@ Inp_KF_Delta=0.0001
 Inp_KF_Ve=0.001
 
 ; ════ TRADING SESSIONS (UTC) ════
-Inp_TradeAsia=false
+Inp_TradeAsia=true
 Inp_TradeLondon=true
 Inp_TradeNewYork=true
 Inp_BoostOverlap=true
