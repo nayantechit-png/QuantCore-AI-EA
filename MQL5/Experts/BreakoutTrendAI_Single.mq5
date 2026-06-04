@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.6"
+#property version "2.7"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -794,19 +794,55 @@ bool HasTrade()
            (int)PositionGetInteger(POSITION_MAGIC)==InpMagicNumber) return true;
     return false;
 }
+ENUM_ORDER_TYPE_FILLING GetFillingMode()
+{
+    int filling = (int)SymbolInfoInteger(_Symbol, SYMBOL_FILLING_MODE);
+    if((filling & SYMBOL_FILLING_FOK) != 0) return ORDER_FILLING_FOK;
+    if((filling & SYMBOL_FILLING_IOC) != 0) return ORDER_FILLING_IOC;
+    return ORDER_FILLING_RETURN;
+}
+
 void OpenTrade(Signal &sig, double lots, double score, double &feat[])
 {
+    // Enforce broker minimum stop distance
+    double price  = (sig.direction==1) ? SymbolInfoDouble(_Symbol,SYMBOL_ASK)
+                                       : SymbolInfoDouble(_Symbol,SYMBOL_BID);
+    double minDist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+    double slDist  = MathAbs(price - sig.slPrice);
+    double tpDist  = MathAbs(price - sig.tp1Price);
+    if(slDist < minDist || tpDist < minDist)
+    {
+        g_lastReason = StringFormat("STOPS TOO CLOSE (min %.1f pts)", minDist/_Point);
+        Print("OpenTrade: SL/TP below min stop level ", minDist/_Point, " pts — skipping");
+        return;
+    }
+
     MqlTradeRequest req; MqlTradeResult res;
     ZeroMemory(req); ZeroMemory(res);
-    req.symbol=_Symbol; req.magic=InpMagicNumber; req.volume=lots;
-    req.type_filling=ORDER_FILLING_FOK;
-    req.sl=sig.slPrice; req.tp=sig.tp1Price;
-    req.comment=StringFormat("BTAI s=%.2f",score);
-    if(sig.direction==1){ req.type=ORDER_TYPE_BUY;  req.price=SymbolInfoDouble(_Symbol,SYMBOL_ASK); }
-    else                { req.type=ORDER_TYPE_SELL; req.price=SymbolInfoDouble(_Symbol,SYMBOL_BID); }
+    req.action        = TRADE_ACTION_DEAL;
+    req.symbol        = _Symbol;
+    req.magic         = InpMagicNumber;
+    req.volume        = lots;
+    req.type_filling  = GetFillingMode();
+    req.sl            = sig.slPrice;
+    req.tp            = sig.tp1Price;
+    req.comment       = StringFormat("BTAI s=%.2f", score);
+    if(sig.direction==1){ req.type=ORDER_TYPE_BUY;  req.price=price; }
+    else                { req.type=ORDER_TYPE_SELL; req.price=price; }
+
     if(OrderSend(req,res))
-    { tradesToday++; StorePend(feat); LogOpen(sig,lots,score,res.order); }
-    else Print("OrderSend failed: ",res.retcode," ",res.comment);
+    {
+        tradesToday++;
+        StorePend(feat);
+        LogOpen(sig, lots, score, res.order);
+        g_lastReason = StringFormat("OPENED #%d", (int)res.order);
+    }
+    else
+    {
+        g_lastReason = StringFormat("ERR %d: %s", res.retcode, res.comment);
+        Print("OrderSend failed: ", res.retcode, " ", res.comment,
+              " fill=", EnumToString(req.type_filling));
+    }
 }
 void ManageTrades()
 {
