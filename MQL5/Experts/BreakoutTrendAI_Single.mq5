@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.8"
+#property version "2.9"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -489,12 +489,25 @@ void InitAI(string fn)
 // ═══════════════════════════════════════════════════════════════
 double g_dailyEq=0, g_weeklyEq=0;
 int    tradesToday=0;
+int    g_lastDay=-1;
 
 void InitRisk()
 {
-    g_dailyEq=AccountInfoDouble(ACCOUNT_EQUITY);
-    g_weeklyEq=AccountInfoDouble(ACCOUNT_EQUITY);
-    tradesToday=0;
+    double eq=AccountInfoDouble(ACCOUNT_EQUITY);
+    g_dailyEq=eq; g_weeklyEq=eq; tradesToday=0;
+    MqlDateTime dt; TimeToStruct(TimeCurrent(),dt); g_lastDay=dt.day;
+}
+
+void DailyReset()
+{
+    MqlDateTime dt; TimeToStruct(TimeCurrent(),dt);
+    if(dt.day==g_lastDay) return;       // same day — nothing to do
+    g_lastDay   = dt.day;
+    tradesToday = 0;
+    double eq   = AccountInfoDouble(ACCOUNT_EQUITY);
+    g_dailyEq   = eq;                   // fresh daily baseline
+    if(dt.day_of_week==1) g_weeklyEq=eq; // Monday — fresh weekly baseline
+    Print("Daily reset | day=",dt.day," equity=",DoubleToString(eq,2));
 }
 bool LimitHit()
 {
@@ -634,7 +647,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.8 | 2026-06-04", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.9 | 2026-06-04", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -975,6 +988,7 @@ void OnDeinit(const int reason)
 void OnTick()
 {
     if(!IsNewBar()) return;
+    DailyReset();        // reset trade counter + daily equity at midnight
 
     DrawChartLevels();   // refresh S/R lines every bar
 
