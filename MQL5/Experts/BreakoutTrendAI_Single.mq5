@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.7"
+#property version "2.8"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -14,13 +14,22 @@ input double InpSL_ATR_Multiplier    = 1.5;
 input double InpTP1_R_Multiple       = 1.0;
 input double InpTP2_R_Multiple       = 2.5;
 
-input bool   InpTradeAsia            = false; // Trade Asian session (00:00-09:00 UTC)
-input int    InpAsiaStartHour        = 0;    // Asia open  (UTC)
-input int    InpAsiaEndHour          = 9;    // Asia close (UTC)
-input int    InpLondonStartHour      = 7;    // London open  (UTC)
-input int    InpLondonEndHour        = 16;   // London close (UTC)
-input int    InpNYStartHour          = 13;   // NY open      (UTC)
-input int    InpNYEndHour            = 21;   // NY close     (UTC)
+// ── Session Filters (all times UTC) ──────────────────────────
+input bool   InpTradeLondon          = true;  // London pure     (07:00-13:00 UTC)
+input int    InpLondonStart          = 7;     // London open
+input int    InpLondonEnd            = 13;    // London close (before overlap)
+
+input bool   InpTradeOverlap         = true;  // London / NY overlap (13:00-17:00 UTC)
+input int    InpOverlapStart         = 13;    // Overlap open
+input int    InpOverlapEnd           = 17;    // Overlap close
+
+input bool   InpTradeLateNY          = true;  // Late New York   (17:00-21:00 UTC)
+input int    InpLateNYStart          = 17;    // Late NY open
+input int    InpLateNYEnd            = 21;    // Late NY close
+
+input bool   InpTradeAsia            = false; // Asian session   (00:00-09:00 UTC)
+input int    InpAsiaStart            = 0;     // Asia open
+input int    InpAsiaEnd              = 9;     // Asia close
 
 input double InpAI_Threshold         = 0.55;
 input string InpAI_ModelFile         = "btai_model.dat";
@@ -598,21 +607,22 @@ void UpdateDashboard()
 
     MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
     int hr = dt.hour;
-    bool inAsia   = InpTradeAsia && (hr >= InpAsiaStartHour && hr < InpAsiaEndHour);
-    bool inLondon = (hr >= InpLondonStartHour && hr < InpLondonEndHour);
-    bool inNY     = (hr >= InpNYStartHour     && hr < InpNYEndHour);
+    bool inAsia    = InpTradeAsia    && (hr >= InpAsiaStart    && hr < InpAsiaEnd);
+    bool inLondon  = InpTradeLondon  && (hr >= InpLondonStart  && hr < InpLondonEnd);
+    bool inOverlap = InpTradeOverlap && (hr >= InpOverlapStart && hr < InpOverlapEnd);
+    bool inLateNY  = InpTradeLateNY  && (hr >= InpLateNYStart  && hr < InpLateNYEnd);
     string sessStr; color sessClr;
-    if(inLondon && inNY)
-        { sessStr=StringFormat("● OVERLAP  %02d-%02d UTC", InpNYStartHour, InpLondonEndHour);
+    if(inOverlap)
+        { sessStr=StringFormat("● OVERLAP  %02d-%02d UTC", InpOverlapStart, InpOverlapEnd);
           sessClr=C_YEL; }
     else if(inLondon)
-        { sessStr=StringFormat("● LONDON   %02d-%02d UTC", InpLondonStartHour, InpLondonEndHour);
+        { sessStr=StringFormat("● LONDON   %02d-%02d UTC", InpLondonStart, InpLondonEnd);
           sessClr=C_GRN; }
-    else if(inNY)
-        { sessStr=StringFormat("● NEW YORK %02d-%02d UTC", InpNYStartHour, InpNYEndHour);
+    else if(inLateNY)
+        { sessStr=StringFormat("● LATE NY  %02d-%02d UTC", InpLateNYStart, InpLateNYEnd);
           sessClr=C_BLU; }
     else if(inAsia)
-        { sessStr=StringFormat("● ASIA     %02d-%02d UTC", InpAsiaStartHour, InpAsiaEndHour);
+        { sessStr=StringFormat("● ASIA     %02d-%02d UTC", InpAsiaStart, InpAsiaEnd);
           sessClr=C'80,160,255'; }
     else
         { sessStr="○ MARKET CLOSED";      sessClr=C_DIM; }
@@ -624,7 +634,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.6 | 2026-06-03", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v2.8 | 2026-06-04", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -878,10 +888,11 @@ bool InSession()
     MqlDateTime dt;
     TimeToStruct(TimeCurrent(), dt);
     int h = dt.hour;
-    bool asia   = InpTradeAsia && (h>=InpAsiaStartHour && h<InpAsiaEndHour);
-    bool london = (h>=InpLondonStartHour && h<InpLondonEndHour);
-    bool ny     = (h>=InpNYStartHour     && h<InpNYEndHour);
-    return (asia || london || ny);
+    bool asia    = InpTradeAsia    && (h >= InpAsiaStart    && h < InpAsiaEnd);
+    bool london  = InpTradeLondon  && (h >= InpLondonStart  && h < InpLondonEnd);
+    bool overlap = InpTradeOverlap && (h >= InpOverlapStart && h < InpOverlapEnd);
+    bool lateNY  = InpTradeLateNY  && (h >= InpLateNYStart  && h < InpLateNYEnd);
+    return (asia || london || overlap || lateNY);
 }
 
 // ═══════════════════════════════════════════════════════════════
