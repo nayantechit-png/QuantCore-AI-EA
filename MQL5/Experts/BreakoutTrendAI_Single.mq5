@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "2.9"
+#property version "3.0"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -45,6 +45,10 @@ double   g_lastScore  = 0.0;
 int      g_lastDir    = 0;
 datetime g_lastSigT   = 0;
 string   g_lastReason = "INIT";
+
+// Resolved per-symbol file paths (set in OnInit)
+string   g_modelFile  = "";
+string   g_logFile    = "";
 
 // ═══════════════════════════════════════════════════════════════
 //  INDICATORS  (handle-based – required in MQL5)
@@ -402,7 +406,7 @@ void Backprop(double label)
     }
 
     g_trainSteps++;
-    if(g_trainSteps % InpSaveEveryNTrades == 0) SaveModel(InpAI_ModelFile);
+    if(g_trainSteps % InpSaveEveryNTrades == 0) SaveModel(g_modelFile);
 }
 
 // ── Public AI API ─────────────────────────────────────────────
@@ -647,7 +651,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v2.9 | 2026-06-04", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v3.0 | 2026-06-05", lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
@@ -746,7 +750,7 @@ int g_log=INVALID_HANDLE;
 
 void InitLogger()
 {
-    g_log=FileOpen("btai_log.csv",FILE_WRITE|FILE_CSV|FILE_ANSI);
+    g_log=FileOpen(g_logFile,FILE_WRITE|FILE_CSV|FILE_ANSI);
     if(g_log!=INVALID_HANDLE)
         FileWrite(g_log,"time","type","symbol","posId",
                   "direction","entry","sl","tp1","lots","score","profit","step");
@@ -967,10 +971,25 @@ int OnInit()
     ChartIndicatorAdd(0, 0, g_hEMA50);
     ChartIndicatorAdd(0, 0, g_hEMA200);
 
+    // ── Auto-name model + log files by symbol ─────────────────────
+    // Strips broker suffix (.x .fx .pro etc.) so EURUSD.x → btai_eurusd.dat
+    {
+        string sym = _Symbol;
+        StringToLower(sym);
+        int dot = StringFind(sym, ".");
+        if(dot > 0) sym = StringSubstr(sym, 0, dot);
+        g_modelFile = (StringLen(InpAI_ModelFile) > 0 &&
+                       InpAI_ModelFile != "btai_model.dat")
+                      ? InpAI_ModelFile                  // user set a custom name → keep it
+                      : "btai_" + sym + ".dat";          // auto: btai_eurusd.dat etc.
+        g_logFile   = "btai_" + sym + "_log.csv";
+        Print("BTAI model file: ", g_modelFile, " | log: ", g_logFile);
+    }
+
     InitRisk();
     InitLogger();
     InitMem();
-    InitAI(InpAI_ModelFile);
+    InitAI(g_modelFile);
     UpdateDashboard();
     DrawChartLevels();
     return INIT_SUCCEEDED;
@@ -978,7 +997,7 @@ int OnInit()
 
 void OnDeinit(const int reason)
 {
-    SaveModel(InpAI_ModelFile);
+    SaveModel(g_modelFile);
     CloseLogger();
     ReleaseIndicators();
     DestroyDashboard();
