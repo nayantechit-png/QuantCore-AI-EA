@@ -1,4 +1,4 @@
-; QuantCore AI EA v1.30 — XAUUSD H1 (Gold)
+; QuantCore AI EA v1.31 — XAUUSD H1 (Gold)
 ; LIVE REPORT FINDING: 42 trades, PF 0.60 — most active pair but losing
 ; ROOT CAUSE: threshold 0.58 too loose, Gold has high ATR + wide spread
 ; FIX: threshold 0.73, risk 0.50%, max 1 position, higher ADX minimum
@@ -31,6 +31,8 @@ Inp_TrailingStop=true
 Inp_Trail_ATR=1.2
 Inp_MaxPositions=1
 Inp_LongExtraScore=0.05
+Inp_SkipSessionEdge=true
+Inp_MinSL_Pips=20.0
 
 ; ════ CONSECUTIVE LOSS GUARD ════
 Inp_MaxConsecLoss=3

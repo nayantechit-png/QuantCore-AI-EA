@@ -1,4 +1,4 @@
-; QuantCore AI EA v1.30 — USDCHF H1
+; QuantCore AI EA v1.31 — USDCHF H1
 ; LIVE REPORT: PF 23.44 — 2nd highest profit factor in the account
 ; CHF is a safe-haven pair with clean trends — suits the EMA/Kalman model
 ; Sessions: London + Overlap + NY (USD/CHF most liquid during NY hours)
@@ -30,6 +30,8 @@ Inp_TrailingStop=true
 Inp_Trail_ATR=1.2
 Inp_MaxPositions=2
 Inp_LongExtraScore=0.05
+Inp_SkipSessionEdge=true
+Inp_MinSL_Pips=15.0
 
 ; ════ CONSECUTIVE LOSS GUARD ════
 Inp_MaxConsecLoss=3

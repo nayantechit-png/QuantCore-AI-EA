@@ -1,4 +1,4 @@
-; QuantCore AI EA v1.30 — GBPUSD H1
+; QuantCore AI EA v1.31 — GBPUSD H1
 ; LIVE REPORT FINDING: 15 trades, PF 1.24 — marginal but profitable
 ; FIX: raise threshold slightly to 0.70, keep risk at 0.50%
 ; Sessions: London + Overlap + NY (Asia OFF — GBP Asia = wide spreads)
@@ -30,6 +30,8 @@ Inp_TrailingStop=true
 Inp_Trail_ATR=1.2
 Inp_MaxPositions=2
 Inp_LongExtraScore=0.05
+Inp_SkipSessionEdge=true
+Inp_MinSL_Pips=15.0
 
 ; ════ CONSECUTIVE LOSS GUARD ════
 Inp_MaxConsecLoss=3

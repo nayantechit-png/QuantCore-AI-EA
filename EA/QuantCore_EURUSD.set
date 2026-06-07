@@ -1,4 +1,4 @@
-; QuantCore AI EA v1.30 — EURUSD H1
+; QuantCore AI EA v1.31 — EURUSD H1
 ; LIVE REPORT FINDING: PF 0.30 (-$5,030 net), $963 commissions on 26 trades
 ; ROOT CAUSE: threshold 0.58 was too loose → overtrading with poor selectivity
 ; FIX: threshold raised to 0.76, risk halved to 0.40%, max 1 position
@@ -31,6 +31,8 @@ Inp_TrailingStop=true
 Inp_Trail_ATR=1.2
 Inp_MaxPositions=1
 Inp_LongExtraScore=0.05
+Inp_SkipSessionEdge=true
+Inp_MinSL_Pips=15.0
 
 ; ════ CONSECUTIVE LOSS GUARD ════
 Inp_MaxConsecLoss=3

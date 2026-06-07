@@ -16,7 +16,7 @@
 //+------------------------------------------------------------------+
 #property copyright   "QuantCore"
 #property link        "https://github.com/QuantCore/QuantCore-AI-EA"
-#property version     "1.30"
+#property version     "1.31"
 #property description "AI ensemble EA for prop firm challenges — Forex & Gold"
 #property strict
 
@@ -58,6 +58,8 @@ input bool   Inp_TrailingStop   = true;  // Enable ATR trailing stop
 input double Inp_Trail_ATR      = 1.2;   // Trailing stop distance × ATR (wider = less premature exits)
 input int    Inp_MaxPositions   = 2;     // Max simultaneous positions
 input double Inp_LongExtraScore = 0.05;  // Extra score required for BUY entries (long bias fix)
+input bool   Inp_SkipSessionEdge = true; // Skip entries at session transition hours (avoids open/close spikes)
+input double Inp_MinSL_Pips    = 15.0;  // Minimum SL distance in pips (0 = disabled)
 
 input group "════ CONSECUTIVE LOSS GUARD ════"
 input int    Inp_MaxConsecLoss     = 3;    // Pause trading after N consecutive losses
@@ -108,9 +110,10 @@ int h_EMA_Fast, h_EMA_Mid, h_EMA_Slow;
 int h_RSI, h_Stoch, h_ADX, h_ATR;
 int h_EMA_Fast_H4, h_EMA_Slow_H4, h_RSI_H4;
 
-// Dashboard signal cache (updated each new bar)
+// Dashboard signal cache (updated every tick once indicators are ready)
 double g_LastBullScore = 0;
 double g_LastBearScore = 0;
+bool   g_ScoresReady   = false;
 
 // Consecutive loss guard
 int      g_ConsecLosses     = 0;
@@ -266,14 +269,27 @@ void OnDeinit(const int reason)
 
 void OnTick()
   {
-   // Only process on new H1 bar (reduces noise, saves CPU)
+   // New H1 bar detection
    static datetime lastBar = 0;
    datetime curBar = iTime(_Symbol, PERIOD_H1, 0);
    bool newBar = (curBar != lastBar);
    if(newBar) lastBar = curBar;
 
-   // Always run: trailing stop + prop limit checks
+   // Always run: Kalman + score cache update + dashboard + trailing + prop checks
    UpdateKalmanOnTick();
+
+   // Compute scores on every tick so dashboard is always live (bar-1 data is
+   // constant between bars, so this is a cheap repeated read — not wasteful)
+   {
+      double bs = 0, ss = 0;
+      if(CalcSignalScores(bs, ss))
+        {
+         g_LastBullScore = bs;
+         g_LastBearScore = ss;
+         g_ScoresReady   = true;
+        }
+   }
+
    UpdateDashboard();
    if(Inp_TrailingStop) ManageTrailingStop();
    CheckDailyReset();
@@ -287,23 +303,29 @@ void OnTick()
       return;
      }
 
-   if(!newBar) return;   // wait for new bar for entries
+   if(!newBar) return;   // entries only on new H1 bar
+   if(!g_ScoresReady)    return;   // wait until indicators have warmed up
 
    // ── SESSION FILTER ────────────────────────────────────────────
    if(!IsSessionOpen(dt.hour)) return;
 
+   // ── SESSION EDGE FILTER ───────────────────────────────────────
+   // Skip the first bar at session transition hours — London open (07),
+   // NY open/overlap (13), London close (16), NY close (21).
+   // Spread widens and volatility spikes exactly at these crossings;
+   // the June 5 back-to-back losses both fired at 16:00 UTC.
+   if(Inp_SkipSessionEdge &&
+      (dt.hour == 7 || dt.hour == 13 || dt.hour == 16 || dt.hour == 21))
+      return;
+
    // ── DYNAMIC SCORE THRESHOLD ───────────────────────────────────
-   // During London-NY overlap (12:00-16:00) volume is 3× higher —
-   // lower the entry threshold slightly to catch strong breakouts.
    double dynMinScore = Inp_MinScore;
    if(Inp_BoostOverlap && IsOverlapHour(dt.hour))
       dynMinScore = MathMax(0.50, Inp_MinScore - Inp_OverlapBoost);
 
-   // Compute AI signal
-   double bullScore = 0, bearScore = 0;
-   if(!CalcSignalScores(bullScore, bearScore)) return;
-   g_LastBullScore = bullScore;
-   g_LastBearScore = bearScore;
+   // Use the scores already computed this tick
+   double bullScore = g_LastBullScore;
+   double bearScore = g_LastBearScore;
 
    int openCount = CountOpenPositions();
 
@@ -342,6 +364,20 @@ void OnTick()
 
    double sl_dist = atrVal * Inp_SL_ATR_Mult;
    double tp_dist = atrVal * Inp_TP_ATR_Mult;
+
+   // ── MINIMUM SL PIPS GUARD ─────────────────────────────────────
+   // Protects against ATR-compressed SLs that widen spreads will immediately
+   // trigger. Pip size = _Point × 10 for 5/3-digit pairs, _Point for 4/2-digit.
+   if(Inp_MinSL_Pips > 0)
+     {
+      double pipSz = _Point * (_Digits % 2 == 1 ? 10.0 : 1.0);
+      if(pipSz > 0 && sl_dist / pipSz < Inp_MinSL_Pips)
+        {
+         Print("QuantCore: SL too tight (", DoubleToString(sl_dist / pipSz, 1),
+               " pips < ", Inp_MinSL_Pips, " min). Skipping entry.");
+         return;
+        }
+     }
 
    string sessName = ActiveSessionName(dt.hour);
 
@@ -815,7 +851,8 @@ void UpdateDashboard()
    // ── HEADER ─────────────────────────────────────────────────────
    int ry = Y;
    _QR("QC_HDR0", X, ry, W, LH + 6, QC_HDR, clrNONE);
-   _QL("QC_TITLE", "QUANTCORE AI  v1.3 | 2026-06-04",  X + 8, ry + 4, QC_WHT, 9);
+   _QL("QC_TITLE", "QUANTCORE AI  v1.31 | " + TimeToString(TimeCurrent(), TIME_DATE),
+       X + 8, ry + 4, QC_WHT, 9);
    color  stClr = g_TradingAllowed ? QC_GRN : QC_RED;
    string stTxt = g_TradingAllowed ? "● ACTIVE" : "■ STOPPED";
    _QL("QC_STAT",  stTxt,                 X + W - 88,  ry + 4, stClr, 9);
@@ -848,7 +885,8 @@ void UpdateDashboard()
    _QR("QC_BB_BG",  X + 80, ry + 4, bw,                LH - 8, QC_HDR, clrNONE);
    _QR("QC_BB_BAR", X + 80, ry + 4, MathMax(2, bBarW),  LH - 8, QC_GRN, clrNONE);
    _QL("QC_BUL",   "BULL", X + 8,  ry + 3, QC_GRN, 9);
-   _QL("QC_BUL_V", DoubleToString(g_LastBullScore, 3), X + 40, ry + 3, QC_GRN, 9);
+   _QL("QC_BUL_V", g_ScoresReady ? DoubleToString(g_LastBullScore, 3) : "WAIT",
+       X + 40, ry + 3, g_ScoresReady ? QC_GRN : QC_DIM, 9);
    ry += LH;
 
    // Bear bar
@@ -856,7 +894,8 @@ void UpdateDashboard()
    _QR("QC_BR_BG",  X + 80, ry + 4, bw,                 LH - 8, QC_HDR, clrNONE);
    _QR("QC_BR_BAR", X + 80, ry + 4, MathMax(2, bearBarW), LH - 8, QC_RED, clrNONE);
    _QL("QC_BER",   "BEAR", X + 8,  ry + 3, QC_RED, 9);
-   _QL("QC_BER_V", DoubleToString(g_LastBearScore, 3), X + 40, ry + 3, QC_RED, 9);
+   _QL("QC_BER_V", g_ScoresReady ? DoubleToString(g_LastBearScore, 3) : "WAIT",
+       X + 40, ry + 3, g_ScoresReady ? QC_RED : QC_DIM, 9);
    ry += LH;
 
    _QR("QC_THR0", X, ry, W, LH, QC_BG, clrNONE);

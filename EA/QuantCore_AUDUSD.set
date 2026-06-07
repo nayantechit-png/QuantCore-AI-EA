@@ -1,4 +1,4 @@
-; QuantCore AI EA v1.30 — AUDUSD H1
+; QuantCore AI EA v1.31 — AUDUSD H1
 ; LIVE REPORT: PF 14.78, $2,083.95 net profit — BEST PAIR in the account
 ; Deploy on AUDUSD.x H1 chart with this preset
 ; Sessions: London + Overlap + NY (Asia = AUD/China hours, optional)
@@ -30,6 +30,8 @@ Inp_TrailingStop=true
 Inp_Trail_ATR=1.2
 Inp_MaxPositions=2
 Inp_LongExtraScore=0.05
+Inp_SkipSessionEdge=true
+Inp_MinSL_Pips=15.0
 
 ; ════ CONSECUTIVE LOSS GUARD ════
 Inp_MaxConsecLoss=3
