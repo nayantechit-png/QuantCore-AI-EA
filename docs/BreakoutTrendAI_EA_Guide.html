@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BreakoutTrendAI — EA Documentation v3.0</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6fa; color: #1a1f2e; font-size: 13px; }
+  @media print {
+    body { background: #fff; font-size: 11px; }
+    .page-break { page-break-before: always; }
+    .no-print { display: none; }
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+  /* ── Cover ── */
+  .cover {
+    background: linear-gradient(135deg, #0f1829 0%, #1a2744 60%, #0d3060 100%);
+    color: #fff; padding: 60px 50px; border-radius: 12px; margin-bottom: 30px;
+    position: relative; overflow: hidden;
+  }
+  .cover::before {
+    content: ''; position: absolute; top: -60px; right: -60px;
+    width: 280px; height: 280px; border-radius: 50%;
+    background: rgba(62,132,215,0.12); pointer-events: none;
+  }
+  .cover-badge {
+    display: inline-block; background: #2a9d8f; color: #fff;
+    padding: 4px 14px; border-radius: 20px; font-size: 11px;
+    letter-spacing: 1px; font-weight: 700; margin-bottom: 18px;
+    text-transform: uppercase;
+  }
+  .cover h1 { font-size: 34px; font-weight: 800; line-height: 1.15; margin-bottom: 8px; }
+  .cover h1 span { color: #3e84d7; }
+  .cover .subtitle { font-size: 15px; color: #8da4c8; margin-bottom: 28px; }
+  .cover-meta { display: flex; gap: 30px; flex-wrap: wrap; }
+  .cover-meta div { }
+  .cover-meta .label { font-size: 10px; color: #5a7aaa; letter-spacing: 1px; text-transform: uppercase; }
+  .cover-meta .value { font-size: 14px; font-weight: 700; color: #d0e4ff; }
+
+  /* ── Section headers ── */
+  .section { background: #fff; border-radius: 10px; padding: 28px 32px; margin-bottom: 20px;
+             box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .section-title {
+    font-size: 16px; font-weight: 800; color: #0d3060; margin-bottom: 18px;
+    padding-bottom: 10px; border-bottom: 2px solid #e8eef8;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title .icon {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: #0d3060; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; flex-shrink: 0;
+  }
+  h3 { font-size: 13px; font-weight: 700; color: #1a2744; margin: 16px 0 8px; }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { background: #0d3060; color: #fff; padding: 8px 12px; text-align: left; font-size: 11px;
+       letter-spacing: 0.5px; text-transform: uppercase; }
+  td { padding: 8px 12px; border-bottom: 1px solid #edf1f9; font-size: 12px; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #f8faff; }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .tag-green  { background: #d4f4e2; color: #1a7a42; }
+  .tag-red    { background: #fde8e8; color: #b03030; }
+  .tag-blue   { background: #ddeeff; color: #1a4a8a; }
+  .tag-yellow { background: #fef9e0; color: #8a6a00; }
+  .tag-gray   { background: #eef1f7; color: #555; }
+
+  /* ── Pair cards ── */
+  .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 6px; }
+  .pair-card {
+    border: 1.5px solid #e0e8f5; border-radius: 9px; padding: 16px 18px;
+    position: relative; overflow: hidden;
+  }
+  .pair-card::before {
+    content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+    border-radius: 9px 0 0 9px;
+  }
+  .pair-card.best::before  { background: #2a9d8f; }
+  .pair-card.good::before  { background: #3e84d7; }
+  .pair-card.caution::before { background: #e9c46a; }
+  .pair-name { font-size: 15px; font-weight: 800; color: #0d3060; margin-bottom: 6px; }
+  .pair-pf { font-size: 11px; color: #555; margin-bottom: 10px; }
+  .pair-pf span { font-weight: 700; color: #2a9d8f; font-size: 13px; }
+  .pair-row { display: flex; justify-content: space-between; font-size: 11px;
+              padding: 3px 0; border-bottom: 1px solid #f0f3fa; }
+  .pair-row:last-child { border-bottom: none; }
+  .pair-row .k { color: #666; }
+  .pair-row .v { font-weight: 600; color: #1a1f2e; }
+
+  /* ── Flow diagram ── */
+  .flow { display: flex; gap: 0; align-items: stretch; margin-top: 8px; flex-wrap: wrap; }
+  .flow-step {
+    flex: 1; min-width: 100px; background: #f0f5ff; border: 1.5px solid #cdd8f0;
+    border-radius: 8px; padding: 12px 10px; text-align: center; position: relative;
+    margin: 4px;
+  }
+  .flow-step.block { background: #fef0f0; border-color: #f5c2c2; }
+  .flow-step.trade { background: #e8f8f0; border-color: #a8dfc0; }
+  .flow-num { font-size: 10px; color: #5a7aaa; font-weight: 700; margin-bottom: 4px; }
+  .flow-label { font-size: 11px; font-weight: 700; color: #0d3060; margin-bottom: 3px; }
+  .flow-sub { font-size: 10px; color: #666; }
+
+  /* ── Info boxes ── */
+  .info-box {
+    border-radius: 8px; padding: 14px 16px; margin: 12px 0; font-size: 12px; line-height: 1.6;
+  }
+  .info-box.blue   { background: #e8f2ff; border-left: 4px solid #3e84d7; color: #1a3060; }
+  .info-box.green  { background: #e8f8f0; border-left: 4px solid #2a9d8f; color: #0f4030; }
+  .info-box.yellow { background: #fef9e0; border-left: 4px solid #e9c46a; color: #5a4000; }
+  .info-box.red    { background: #fef0f0; border-left: 4px solid #e76f51; color: #6a1a10; }
+  .info-box strong { font-weight: 700; }
+
+  /* ── Code blocks ── */
+  .code { font-family: 'Consolas', monospace; background: #1a1f2e; color: #a8d8ea;
+          padding: 14px 18px; border-radius: 8px; font-size: 11px; line-height: 1.7;
+          margin: 10px 0; white-space: pre-wrap; }
+
+  /* ── Sessions timeline ── */
+  .timeline { display: flex; height: 36px; border-radius: 8px; overflow: hidden; margin: 10px 0; width: 100%; }
+  .tl-seg { display: flex; align-items: center; justify-content: center;
+             font-size: 10px; font-weight: 700; color: #fff; }
+  .tl-closed  { background: #2a2f3e; flex: 7; }
+  .tl-london  { background: #2a9d8f; flex: 6; }
+  .tl-overlap { background: #e9c46a; color: #333; flex: 4; }
+  .tl-lateNY  { background: #3e84d7; flex: 4; }
+  .tl-closed2 { background: #2a2f3e; flex: 3; }
+  .tl-label   { font-size: 10px; color: #888; margin: 4px 0 8px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .tl-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+  /* ── File path ── */
+  .filepath { font-family: 'Consolas', monospace; background: #f0f3fa;
+              padding: 3px 8px; border-radius: 4px; font-size: 11px; color: #2a4a8a; }
+
+  /* ── Print button ── */
+  .print-btn {
+    position: fixed; top: 20px; right: 20px; background: #0d3060; color: #fff;
+    border: none; padding: 10px 22px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; font-weight: 700; box-shadow: 0 4px 16px rgba(13,48,96,0.3);
+    z-index: 999;
+  }
+  .print-btn:hover { background: #1a4a8a; }
+
+  /* ── Footer ── */
+  .footer { text-align: center; color: #999; font-size: 11px; padding: 20px 0 40px; }
+</style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">⬇ Save as PDF</button>
+
+<div class="container">
+
+<!-- ══════════════════════════════════════════════════════
+     COVER
+═══════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-badge">Expert Advisor Documentation</div>
+  <h1>BreakoutTrend<span>AI</span></h1>
+  <div class="subtitle">Self-Learning Neural Network EA for MetaTrader 5</div>
+  <div class="cover-meta">
+    <div><div class="label">Version</div><div class="value">v3.0</div></div>
+    <div><div class="label">Date</div><div class="value">June 2026</div></div>
+    <div><div class="label">Timeframe</div><div class="value">M15</div></div>
+    <div><div class="label">Pairs</div><div class="value">6 Pairs</div></div>
+    <div><div class="label">Profile</div><div class="value">Prop Firm (FTMO / GoatFunded / MFF)</div></div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     1. OVERVIEW
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">1</div> Overview</div>
+
+  <p style="line-height:1.8; color:#333; margin-bottom:14px;">
+    BreakoutTrendAI is a fully autonomous, self-learning Expert Advisor for MetaTrader 5.
+    It combines a classical 20-bar <strong>range breakout strategy</strong> with an
+    <strong>online Multi-Layer Perceptron (MLP)</strong> that improves after every closed trade.
+    Designed specifically for prop firm challenges — it has built-in daily/weekly loss limits,
+    session filters, and a SafeGuard circuit breaker.
+  </p>
+
+  <table>
+    <tr><th>Property</th><th>Detail</th></tr>
+    <tr><td>Strategy type</td><td>Range breakout + trend filter (H1 EMA50) + AI score filter</td></tr>
+    <tr><td>AI model</td><td>MLP 32 → 24 → 12 → 1 with ReLU activations, SGD + Momentum backprop</td></tr>
+    <tr><td>Learning trigger</td><td>After every closed trade (profit/loss → label → backprop)</td></tr>
+    <tr><td>Timeframe</td><td>M15 (signals on M15 bars, trend filter on H1)</td></tr>
+    <tr><td>Trading pairs</td><td>EURUSD · GBPUSD · XAUUSD · USDJPY · GBPJPY · AUDUSD</td></tr>
+    <tr><td>Risk model</td><td>ATR-based position sizing, fixed % risk per trade</td></tr>
+    <tr><td>Prop firm safe</td><td>Daily loss limit, weekly loss limit, max trades/day, SafeGuard EA link</td></tr>
+    <tr><td>File</td><td><span class="filepath">MQL5\Experts\BreakoutTrendAI_Single.mq5</span></td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     2. HOW IT WORKS — TRADE LOGIC FLOW
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">2</div> How It Works — Trade Logic Flow</div>
+
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">STEP 1</div><div class="flow-label">New M15 Bar</div><div class="flow-sub">Triggers once per 15 min bar close</div></div>
+    <div class="flow-step block"><div class="flow-num">STEP 2</div><div class="flow-label">Session Filter</div><div class="flow-sub">London / Overlap / Late NY</div></div>
+    <div class="flow-step block"><div class="flow-num">STEP 3</div><div class="flow-label">Risk Limits</div><div class="flow-sub">Daily / Weekly loss check</div></div>
+    <div class="flow-step block"><div class="flow-num">STEP 4</div><div class="flow-label">Trend Filter</div><div class="flow-sub">H1 EMA50 + RSI direction</div></div>
+    <div class="flow-step block"><div class="flow-num">STEP 5</div><div class="flow-label">Range Breakout</div><div class="flow-sub">Close > 20-bar high/low (bars 2–21)</div></div>
+    <div class="flow-step block"><div class="flow-num">STEP 6</div><div class="flow-label">AI Score</div><div class="flow-sub">32-feature MLP ≥ threshold</div></div>
+    <div class="flow-step trade"><div class="flow-num">STEP 7</div><div class="flow-label">Open Trade</div><div class="flow-sub">ATR-based SL + TP</div></div>
+  </div>
+
+  <div class="info-box blue" style="margin-top:16px;">
+    <strong>Key design principle:</strong> Every filter must pass before a trade opens.
+    If any step fails, the dashboard shows exactly why (OUT OF SESSION / NO TREND / NO BREAKOUT / SCORE LOW / etc.)
+  </div>
+
+  <h3>Trend Filter (Step 4)</h3>
+  <table>
+    <tr><th>Direction</th><th>Condition</th></tr>
+    <tr><td><span class="tag tag-green">BUY signal</span></td><td>M15 close &gt; H1 EMA50 <strong>AND</strong> RSI(14) &gt; 45</td></tr>
+    <tr><td><span class="tag tag-red">SELL signal</span></td><td>M15 close &lt; H1 EMA50 <strong>AND</strong> RSI(14) &lt; 55</td></tr>
+  </table>
+
+  <h3>Range Breakout (Step 5)</h3>
+  <div class="info-box yellow">
+    Range = highest high / lowest low of bars <strong>2 to 21</strong> (bar 1 excluded so bar 1's close can actually break out).
+    Range must be 0.5×ATR – 5.0×ATR wide (ATR-based filter replaces fixed pip filter).
+  </div>
+
+  <h3>Position Management</h3>
+  <table>
+    <tr><th>Feature</th><th>Behaviour</th></tr>
+    <tr><td>Stop Loss</td><td>1.5–2.0 × ATR(14) from entry (pair-dependent)</td></tr>
+    <tr><td>Take Profit 1</td><td>1.0 × SL distance (1:1 RR) — partial target</td></tr>
+    <tr><td>Take Profit 2</td><td>2.5 × SL distance (2.5:1 RR) — full target</td></tr>
+    <tr><td>Break-even</td><td>SL moved to entry when TP1 is hit</td></tr>
+    <tr><td>Max 1 trade per pair</td><td>EA skips if position already open on same symbol + magic</td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     3. AI ENGINE
+═══════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <div class="section-title"><div class="icon">3</div> AI Self-Learning Engine</div>
+
+  <h3>Neural Network Architecture</h3>
+  <table>
+    <tr><th>Layer</th><th>Neurons</th><th>Activation</th></tr>
+    <tr><td>Input</td><td>32 features</td><td>—</td></tr>
+    <tr><td>Hidden 1</td><td>24</td><td>ReLU</td></tr>
+    <tr><td>Hidden 2</td><td>12</td><td>ReLU</td></tr>
+    <tr><td>Output</td><td>1 (score 0–1)</td><td>Sigmoid</td></tr>
+  </table>
+
+  <h3>32 Input Features</h3>
+  <table>
+    <tr><th>#</th><th>Feature</th><th>#</th><th>Feature</th></tr>
+    <tr><td>0</td><td>ATR / price (volatility)</td><td>16</td><td>Body size bar 7</td></tr>
+    <tr><td>1</td><td>Spread / ATR</td><td>17–20</td><td>High-low range bars 1–4 / ATR</td></tr>
+    <tr><td>2</td><td>Range width / ATR</td><td>21</td><td>Upper wick bar 1 / ATR</td></tr>
+    <tr><td>3</td><td>Price vs EMA50 / ATR</td><td>22</td><td>Lower wick bar 1 / ATR</td></tr>
+    <tr><td>4</td><td>Price vs EMA200 / ATR</td><td>23</td><td>Entry distance from range high / ATR</td></tr>
+    <tr><td>5</td><td>EMA50 vs EMA200 / ATR</td><td>24</td><td>Entry distance from range low / ATR</td></tr>
+    <tr><td>6</td><td>RSI(14) / 100</td><td>25</td><td>10-bar momentum / ATR</td></tr>
+    <tr><td>7</td><td>Signal direction (+1/–1)</td><td>26</td><td>Distance to swing high / ATR</td></tr>
+    <tr><td>8</td><td>Hour of day / 23</td><td>27</td><td>Distance to swing low / ATR</td></tr>
+    <tr><td>9</td><td>Day of week / 6</td><td>28</td><td>Bollinger Band width / ATR (squeeze)</td></tr>
+    <tr><td>10–16</td><td>Body size bars 1–7 / ATR</td><td>29</td><td>H1 EMA50 direction (+1/–1)</td></tr>
+    <tr><td>—</td><td>—</td><td>30</td><td>Distance to prior day high / ATR</td></tr>
+    <tr><td>—</td><td>—</td><td>31</td><td>Distance to prior day low / ATR</td></tr>
+  </table>
+
+  <h3>Learning Cycle</h3>
+  <div class="info-box green">
+    <strong>When a trade closes:</strong><br/>
+    1. Profit (incl. swap + commission) is converted to a label using: <code style="background:#c8ecd8;padding:2px 5px;border-radius:3px;">label = sigmoid(profit% × 20)</code><br/>
+    2. Backpropagation updates weights using SGD + Momentum (lr=0.001, momentum=0.90)<br/>
+    3. Model saved to <code style="background:#c8ecd8;padding:2px 5px;border-radius:3px;">btai_&lt;symbol&gt;.dat</code> every 5 trades
+  </div>
+
+  <h3>Bootstrap Mode</h3>
+  <div class="info-box yellow">
+    <strong>First 10 trades per pair:</strong> threshold lowered to <strong>0.40</strong> (from 0.54–0.60) so the AI
+    collects real trade outcomes to learn from. After 10 trades, the full threshold applies.
+  </div>
+
+  <h3>Model Files (per pair, isolated)</h3>
+  <table>
+    <tr><th>Pair</th><th>Model file</th><th>Log file</th></tr>
+    <tr><td>EURUSD</td><td class="filepath">btai_eurusd.dat</td><td class="filepath">btai_eurusd_log.csv</td></tr>
+    <tr><td>GBPUSD</td><td class="filepath">btai_gbpusd.dat</td><td class="filepath">btai_gbpusd_log.csv</td></tr>
+    <tr><td>XAUUSD</td><td class="filepath">btai_xauusd.dat</td><td class="filepath">btai_xauusd_log.csv</td></tr>
+    <tr><td>USDJPY</td><td class="filepath">btai_usdjpy.dat</td><td class="filepath">btai_usdjpy_log.csv</td></tr>
+    <tr><td>GBPJPY</td><td class="filepath">btai_gbpjpy.dat</td><td class="filepath">btai_gbpjpy_log.csv</td></tr>
+    <tr><td>AUDUSD</td><td class="filepath">btai_audusd.dat</td><td class="filepath">btai_audusd_log.csv</td></tr>
+  </table>
+  <div style="font-size:11px;color:#888;margin-top:6px;">
+    Location: <span class="filepath">C:\Users\&lt;you&gt;\AppData\Roaming\MetaQuotes\Terminal\&lt;id&gt;\MQL5\Files\</span><br/>
+    Access via MT5: <strong>Tools → Data Folder → MQL5 → Files</strong>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     4. SESSIONS
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">4</div> Trading Sessions (UTC)</div>
+
+  <div class="timeline">
+    <div class="tl-seg tl-closed">00–07<br/>Closed</div>
+    <div class="tl-seg tl-london">07–13<br/>London</div>
+    <div class="tl-seg tl-overlap">13–17<br/>Overlap</div>
+    <div class="tl-seg tl-lateNY">17–21<br/>Late NY</div>
+    <div class="tl-seg tl-closed2">21–00<br/>Closed</div>
+  </div>
+  <div class="tl-label">
+    <span><span class="tl-dot" style="background:#2a9d8f"></span>London 07:00–13:00 UTC</span>
+    <span><span class="tl-dot" style="background:#e9c46a"></span>London/NY Overlap 13:00–17:00 UTC (highest volume)</span>
+    <span><span class="tl-dot" style="background:#3e84d7"></span>Late New York 17:00–21:00 UTC</span>
+    <span><span class="tl-dot" style="background:#2a2f3e"></span>Market Closed (no trades)</span>
+  </div>
+
+  <table>
+    <tr><th>Session</th><th>Hours (UTC)</th><th>Toggle input</th><th>Default</th><th>Best for</th></tr>
+    <tr><td>London</td><td>07:00 – 13:00</td><td><code>InpTradeLondon</code></td><td><span class="tag tag-green">ON</span></td><td>EUR, GBP, Gold</td></tr>
+    <tr><td>Overlap</td><td>13:00 – 17:00</td><td><code>InpTradeOverlap</code></td><td><span class="tag tag-green">ON</span></td><td>All pairs — highest volume</td></tr>
+    <tr><td>Late NY</td><td>17:00 – 21:00</td><td><code>InpTradeLateNY</code></td><td><span class="tag tag-green">ON</span></td><td>USD pairs</td></tr>
+    <tr><td>Asia</td><td>00:00 – 09:00</td><td><code>InpTradeAsia</code></td><td><span class="tag tag-gray">OFF</span></td><td>JPY, AUD (optional)</td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     5. PAIR SETTINGS
+═══════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <div class="section-title"><div class="icon">5</div> Pair Settings &amp; Live Performance</div>
+
+  <div class="info-box green" style="margin-bottom:16px;">
+    <strong>Live account data (GoatFunded Phase 1 — 414572704)</strong> used to tune thresholds.
+    Profit Factors shown are from real trades on the account.
+  </div>
+
+  <div class="pair-grid">
+
+    <div class="pair-card best">
+      <div class="pair-name">AUDUSD <span class="tag tag-green" style="font-size:10px;">BEST</span></div>
+      <div class="pair-pf">Live Profit Factor: <span>14.78</span></div>
+      <div class="pair-row"><span class="k">Magic Number</span><span class="v">787876</span></div>
+      <div class="pair-row"><span class="k">Risk / Trade</span><span class="v">0.50%</span></div>
+      <div class="pair-row"><span class="k">AI Threshold</span><span class="v">0.54</span></div>
+      <div class="pair-row"><span class="k">SL Multiplier</span><span class="v">1.5× ATR</span></div>
+      <div class="pair-row"><span class="k">Max Trades/Day</span><span class="v">4</span></div>
+      <div class="pair-row"><span class="k">Model File</span><span class="v">btai_audusd.dat</span></div>
+    </div>
+
+    <div class="pair-card good">
+      <div class="pair-name">EURUSD <span class="tag tag-yellow" style="font-size:10px;">FILTERED</span></div>
+      <div class="pair-pf">Live Profit Factor: <span style="color:#c0392b;">0.30</span> → threshold raised</div>
+      <div class="pair-row"><span class="k">Magic Number</span><span class="v">787871</span></div>
+      <div class="pair-row"><span class="k">Risk / Trade</span><span class="v">0.50%</span></div>
+      <div class="pair-row"><span class="k">AI Threshold</span><span class="v">0.55 (was 0.58)</span></div>
+      <div class="pair-row"><span class="k">SL Multiplier</span><span class="v">1.5× ATR</span></div>
+      <div class="pair-row"><span class="k">Max Trades/Day</span><span class="v">4</span></div>
+      <div class="pair-row"><span class="k">Model File</span><span class="v">btai_eurusd.dat</span></div>
+    </div>
+
+    <div class="pair-card good">
+      <div class="pair-name">GBPUSD</div>
+      <div class="pair-pf">Live Profit Factor: <span>1.24</span></div>
+      <div class="pair-row"><span class="k">Magic Number</span><span class="v">787872</span></div>
+      <div class="pair-row"><span class="k">Risk / Trade</span><span class="v">0.40%</span></div>
+      <div class="pair-row"><span class="k">AI Threshold</span><span class="v">0.57</span></div>
+      <div class="pair-row"><span class="k">SL Multiplier</span><span class="v">1.8× ATR</span></div>
+      <div class="pair-row"><span class="k">Max Trades/Day</span><span class="v">4</span></div>
+      <div class="pair-row"><span class="k">Model File</span><span class="v">btai_gbpusd.dat</span></div>
+    </div>
+
+    <div class="pair-card caution">
+      <div class="pair-name">XAUUSD <span class="tag tag-yellow" style="font-size:10px;">HIGH ATR</span></div>
+      <div class="pair-pf">Live Profit Factor: <span style="color:#c0392b;">0.60</span> → threshold raised</div>
+      <div class="pair-row"><span class="k">Magic Number</span><span class="v">787873</span></div>
+      <div class="pair-row"><span class="k">Risk / Trade</span><span class="v">0.35%</span></div>
+      <div class="pair-row"><span class="k">AI Threshold</span><span class="v">0.60</span></div>
+      <div class="pair-row"><span class="k">SL Multiplier</span><span class="v">2.0× ATR</span></div>
+      <div class="pair-row"><span class="k">Max Trades/Day</span><span class="v">3</span></div>
+      <div class="pair-row"><span class="k">Model File</span><span class="v">btai_xauusd.dat</span></div>
+    </div>
+
+    <div class="pair-card good">
+      <div class="pair-name">USDJPY</div>
+      <div class="pair-pf">Tight spreads, clean trends</div>
+      <div class="pair-row"><span class="k">Magic Number</span><span class="v">787874</span></div>
+      <div class="pair-row"><span class="k">Risk / Trade</span><span class="v">0.45%</span></div>
+      <div class="pair-row"><span class="k">AI Threshold</span><span class="v">0.55</span></div>
+      <div class="pair-row"><span class="k">SL Multiplier</span><span class="v">1.5× ATR</span></div>
+      <div class="pair-row"><span class="k">Max Trades/Day</span><span class="v">4</span></div>
+      <div class="pair-row"><span class="k">Model File</span><span class="v">btai_usdjpy.dat</span></div>
+    </div>
+
+    <div class="pair-card caution">
+      <div class="pair-name">GBPJPY <span class="tag tag-yellow" style="font-size:10px;">VOLATILE</span></div>
+      <div class="pair-pf">Large ATR spikes — tight risk</div>
+      <div class="pair-row"><span class="k">Magic Number</span><span class="v">787875</span></div>
+      <div class="pair-row"><span class="k">Risk / Trade</span><span class="v">0.35%</span></div>
+      <div class="pair-row"><span class="k">AI Threshold</span><span class="v">0.58</span></div>
+      <div class="pair-row"><span class="k">SL Multiplier</span><span class="v">2.0× ATR</span></div>
+      <div class="pair-row"><span class="k">Max Trades/Day</span><span class="v">3</span></div>
+      <div class="pair-row"><span class="k">Model File</span><span class="v">btai_gbpjpy.dat</span></div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     6. RISK MANAGEMENT
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">6</div> Risk Management</div>
+
+  <table>
+    <tr><th>Rule</th><th>Default</th><th>Behaviour</th></tr>
+    <tr><td>Daily loss limit</td><td>3.50%</td><td>Stops all new trades for the day</td></tr>
+    <tr><td>Weekly loss limit</td><td>6.00%</td><td>Stops all new trades for the week</td></tr>
+    <tr><td>Max trades / day</td><td>3–4 (per pair)</td><td>Counter resets at 00:00 UTC</td></tr>
+    <tr><td>Daily reset</td><td>00:00 UTC</td><td>Trade counter + daily equity baseline reset automatically</td></tr>
+    <tr><td>Weekly reset</td><td>Monday 00:00 UTC</td><td>Weekly equity baseline reset</td></tr>
+    <tr><td>Position sizing</td><td>ATR-based</td><td>Lot = (Equity × Risk%) ÷ (SL pips × pip value)</td></tr>
+    <tr><td>Min stop distance</td><td>Auto</td><td>Checked against <code>SYMBOL_TRADE_STOPS_LEVEL</code> before each order</td></tr>
+    <tr><td>Fill mode</td><td>Auto-detect</td><td>FOK → IOC → RETURN (broker-compatible, no silent rejections)</td></tr>
+  </table>
+
+  <div class="info-box red" style="margin-top:14px;">
+    <strong>GoatFunded / FTMO limits:</strong> Daily 5% · Total 10%.
+    BreakoutTrendAI uses 3.5% / 6% as internal limits — this gives a 1.5% safety buffer
+    so the prop firm limit is never accidentally hit by a single bad candle.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     7. SAFEGUARD EA
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">7</div> SafeGuard EA — Account Circuit Breaker</div>
+
+  <p style="margin-bottom:12px; line-height:1.7; color:#333;">
+    A separate EA (<span class="filepath">MQL5\Experts\SafeGuard_EA.mq5</span>) that runs on
+    <strong>one chart only</strong> and monitors the entire account. When a trigger fires, it
+    closes ALL open positions and locks BreakoutTrendAI via a GlobalVariable for a set period.
+  </p>
+
+  <table>
+    <tr><th>Trigger</th><th>Default</th><th>Action</th></tr>
+    <tr><td>Dollar loss limit</td><td>$500 (range: $100–$1,200)</td><td>Close all + lock for Pause Hours</td></tr>
+    <tr><td>Drawdown %</td><td>3.0% of account</td><td>Close all + lock for Pause Hours</td></tr>
+    <tr><td>Consecutive losses</td><td>3 in a row</td><td>Close all + lock for Pause Hours</td></tr>
+    <tr><td>Pause duration</td><td>4 hours</td><td>Auto-unlocks after timer expires</td></tr>
+    <tr><td>Daily reset</td><td>00:00 UTC</td><td>Loss counters reset, lock cleared</td></tr>
+  </table>
+
+  <div class="info-box blue" style="margin-top:12px;">
+    <strong>Communication method:</strong> SafeGuard writes a GlobalVariable
+    <code>SAFEGUARD_&lt;AccountLogin&gt;</code> = expiry timestamp.
+    BreakoutTrendAI reads this on every bar — if current time &lt; expiry, all entries are blocked.
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     8. INSTALLATION
+═══════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <div class="section-title"><div class="icon">8</div> Installation &amp; Setup</div>
+
+  <h3>Step 1 — Copy Files to MT5</h3>
+  <table>
+    <tr><th>File</th><th>Destination (MT5 Data Folder)</th></tr>
+    <tr><td class="filepath">BreakoutTrendAI_Single.mq5</td><td class="filepath">MQL5\Experts\</td></tr>
+    <tr><td class="filepath">SafeGuard_EA.mq5</td><td class="filepath">MQL5\Experts\</td></tr>
+    <tr><td class="filepath">BTAI_EURUSD_M15.set</td><td class="filepath">MQL5\Presets\</td></tr>
+    <tr><td class="filepath">BTAI_GBPUSD_M15.set</td><td class="filepath">MQL5\Presets\</td></tr>
+    <tr><td class="filepath">BTAI_XAUUSD_M15.set</td><td class="filepath">MQL5\Presets\</td></tr>
+    <tr><td class="filepath">BTAI_USDJPY_M15.set</td><td class="filepath">MQL5\Presets\</td></tr>
+    <tr><td class="filepath">BTAI_GBPJPY_M15.set</td><td class="filepath">MQL5\Presets\</td></tr>
+    <tr><td class="filepath">BTAI_AUDUSD_M15.set</td><td class="filepath">MQL5\Presets\</td></tr>
+  </table>
+
+  <h3>Step 2 — Compile in MetaEditor</h3>
+  <div class="code">1. Open MetaEditor (press F4 in MT5)
+2. Open BreakoutTrendAI_Single.mq5
+3. Press F7 to compile → must show 0 errors
+4. Repeat for SafeGuard_EA.mq5</div>
+
+  <h3>Step 3 — Attach to Charts</h3>
+  <div class="code">Open 6 × M15 charts: EURUSD · GBPUSD · XAUUSD · USDJPY · GBPJPY · AUDUSD
+For each chart:
+  → Drag BreakoutTrendAI_Single from Navigator → Expert Advisors
+  → Properties → Load (bottom left) → select the matching .set file
+  → Click OK
+
+Open 1 extra chart (any symbol):
+  → Attach SafeGuard_EA (no preset needed)
+  → Set Inp_MaxDollarLoss to your risk tolerance ($100–$1,200)</div>
+
+  <h3>Step 4 — Verify</h3>
+  <div class="info-box green">
+    Dashboard should show: <strong>● RUNNING</strong> · Session name · Train Steps: 0 (BOOTSTRAP)<br/>
+    After the first closed trade on each pair, check MT5 Files folder — you should see
+    <strong>6 separate .dat files</strong> appearing (one per pair).
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     9. DASHBOARD GUIDE
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">9</div> Dashboard — Reading the Panel</div>
+
+  <table>
+    <tr><th>Field</th><th>Meaning</th><th>Good value</th></tr>
+    <tr><td>STATUS</td><td>EA running state</td><td><span class="tag tag-green">● RUNNING</span></td></tr>
+    <tr><td>SESSION</td><td>Current active session</td><td>● LONDON / ● OVERLAP / ● LATE NY</td></tr>
+    <tr><td>Train Steps</td><td>Number of completed learning cycles</td><td>Growing over time. 0–9 = BOOTSTRAP</td></tr>
+    <tr><td>Last Score</td><td>AI output for most recent signal (0–1)</td><td>≥ threshold = trade opens</td></tr>
+    <tr><td>Threshold</td><td>Minimum score to open a trade</td><td>Pair-dependent (0.54–0.60)</td></tr>
+    <tr><td>Last Signal</td><td>BUY ▲ or SELL ▼</td><td>Matches trend direction</td></tr>
+    <tr><td>Reason</td><td>Why last bar did or did not trade</td><td>See table below</td></tr>
+    <tr><td>Daily Loss</td><td>Current day loss vs limit</td><td>Green = safe, Red = limit close</td></tr>
+    <tr><td>Trades Today</td><td>Count vs max allowed</td><td>e.g. 2 / 4</td></tr>
+  </table>
+
+  <h3>Reason Codes</h3>
+  <table>
+    <tr><th>Reason displayed</th><th>Meaning</th></tr>
+    <tr><td>OUT OF SESSION</td><td>Current UTC hour is outside enabled sessions</td></tr>
+    <tr><td>LIMIT HIT</td><td>Daily loss / weekly loss / max trades reached</td></tr>
+    <tr><td>SAFEGUARD LOCKED</td><td>SafeGuard EA triggered — wait for timer to expire</td></tr>
+    <tr><td>TRADE OPEN</td><td>Position already open on this pair (max 1)</td></tr>
+    <tr><td>NO TREND (H1 EMA50)</td><td>Price not clearly above/below H1 EMA50</td></tr>
+    <tr><td>NO BREAKOUT</td><td>Last bar close did not break the 20-bar range</td></tr>
+    <tr><td>BOOTSTRAP x.xxx</td><td>AI &lt;10 trades, score shown, bootstrap threshold used</td></tr>
+    <tr><td>SCORE LOW x.xxx</td><td>AI score below threshold — signal filtered</td></tr>
+    <tr><td>STOPS TOO CLOSE</td><td>SL/TP within broker's minimum stop level</td></tr>
+    <tr><td>OPENED #xxxxxx</td><td>Trade opened successfully — ticket number shown</td></tr>
+    <tr><td>ERR 10030: ...</td><td>Broker rejected order — error code + reason shown</td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     10. VERSION HISTORY
+═══════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title"><div class="icon">10</div> Version History</div>
+  <table>
+    <tr><th>Version</th><th>Date</th><th>Key Changes</th></tr>
+    <tr><td>v1.0–2.1</td><td>May 2026</td><td>Initial build. Score always 0 (range filter in wrong units, EMA50/200 cross never triggered)</td></tr>
+    <tr><td>v2.2</td><td>Jun 2026</td><td>Fixed trend filter: M15 EMA50/200 cross → H1 EMA50 comparison</td></tr>
+    <tr><td>v2.3</td><td>Jun 2026</td><td>Fixed range breakout: iHighest start=1 → start=2 (breakout was mathematically impossible)</td></tr>
+    <tr><td>v2.4</td><td>Jun 2026</td><td>Added bootstrap mode (threshold 0.40 for first 10 trades)</td></tr>
+    <tr><td>v2.5</td><td>Jun 2026</td><td>Added Asian session toggle</td></tr>
+    <tr><td>v2.6</td><td>Jun 2026</td><td>Added SafeGuard link via GlobalVariable</td></tr>
+    <tr><td>v2.7</td><td>Jun 2026</td><td>Auto-detect broker fill mode (FOK→IOC→RETURN). Min stop level check. Error in dashboard.</td></tr>
+    <tr><td>v2.8</td><td>Jun 2026</td><td>Sessions split: London / Overlap / Late NY — each independently toggleable</td></tr>
+    <tr><td>v2.9</td><td>Jun 2026</td><td>Fixed daily reset — tradesToday never reset at midnight (critical bug causing LIMIT HIT all day)</td></tr>
+    <tr><td><strong>v3.0</strong></td><td>Jun 2026</td><td><strong>Auto-name model file per symbol</strong> — all 6 pairs no longer share btai_model.dat</td></tr>
+  </table>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════════════════ -->
+<div class="footer">
+  BreakoutTrendAI v3.0 &nbsp;·&nbsp; Self-Learning EA for MetaTrader 5 &nbsp;·&nbsp; June 2026<br/>
+  GoatFunded / FTMO / MyForexFunds compliant &nbsp;·&nbsp; For educational and personal trading use only
+</div>
+
+</div><!-- /container -->
+</body>
+</html>
