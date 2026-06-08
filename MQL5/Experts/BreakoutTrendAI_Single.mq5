@@ -1,6 +1,6 @@
 #property strict
 #property description "BreakoutTrendAI – self-learning EA, single file"
-#property version "3.0"
+#property version "3.1"
 
 // ═══════════════════════════════════════════════════════════════
 //  INPUTS
@@ -32,6 +32,9 @@ input int    InpAsiaStart            = 0;     // Asia open
 input int    InpAsiaEnd              = 9;     // Asia close
 
 input double InpAI_Threshold         = 0.55;
+input double InpBootstrapThreshold   = 0.48;  // Score floor during bootstrap (<10 trades) — was 0.40, too low
+input double InpMinSL_Pips           = 15.0;  // Minimum SL in real pips; 0 = disabled
+input int    InpMaxPortfolioPos      = 3;     // Max total open positions across ALL EA instances
 input string InpAI_ModelFile         = "btai_model.dat";
 
 input double InpLearningRate         = 0.001;
@@ -217,9 +220,14 @@ bool GetBreakoutTrendSignal(Signal &sig)
     }
     return false;
 }
+// Returns real PIPS (not points). For 5/3-digit brokers: 1 pip = 10 points.
+double PipSize()  { return _Point * (_Digits % 2 == 1 ? 10.0 : 1.0); }
+
 double CalcSLPips(const Signal &sig)
 {
-    return MathAbs(sig.entryPrice - sig.slPrice) / _Point;
+    double pip = PipSize();
+    if(pip <= 0) return 0;
+    return MathAbs(sig.entryPrice - sig.slPrice) / pip;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -523,12 +531,14 @@ bool LimitHit()
 }
 double CalcLots(double riskPct, double slPips)
 {
-    if(slPips<0.001) return 0.01;
-    double tv=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
-    double ts=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-    double pv=(ts>0)?tv*(_Point/ts):tv;
-    if(pv<1e-10) return 0.01;
-    double lot=AccountInfoDouble(ACCOUNT_EQUITY)*riskPct/100.0/(slPips*pv);
+    if(slPips < 0.1) return 0.01;
+    double tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+    double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+    double pip = PipSize();
+    // Pip value per lot = tick value scaled from tick size to 1 pip
+    double pv = (ts > 0) ? tv * (pip / ts) : tv;
+    if(pv < 1e-10) return 0.01;
+    double lot = AccountInfoDouble(ACCOUNT_EQUITY) * riskPct / 100.0 / (slPips * pv);
     double mn=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
     double mx=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
     double st=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
@@ -674,12 +684,13 @@ void UpdateDashboard()
     _L("l_stp","Train Steps",  lx, y, C_DIM, 9);
     _L("v_stp", stpStr,        vx, y, stpClr, 9); y+=DB_LH;
 
-    color sclr=(g_lastScore>=InpAI_Threshold)?C_GRN:C_YEL;
+    double activeThresh = (g_trainSteps < 10) ? InpBootstrapThreshold : InpAI_Threshold;
+    color sclr = (g_lastScore >= activeThresh) ? C_GRN : C_YEL;
     _L("l_sc","Last Score",    lx, y, C_DIM, 9);
     _L("v_sc",DoubleToString(g_lastScore,3),  vx, y, sclr, 9); y+=DB_LH;
 
     _L("l_thr","Threshold",    lx, y, C_DIM, 9);
-    _L("v_thr",DoubleToString(InpAI_Threshold,2), vx, y, C_DIM, 9); y+=DB_LH;
+    _L("v_thr",DoubleToString(activeThresh,2), vx, y, C_DIM, 9); y+=DB_LH;
 
     string dirtxt=(g_lastDir==1)?"BUY  ▲":(g_lastDir==-1)?"SELL ▼":"---";
     color  dirclr=(g_lastDir==1)?C_GRN:(g_lastDir==-1)?C_RED:C_DIM;
@@ -813,6 +824,11 @@ void OnClose(ulong posId, double profit)
             LogClose(posId,profit);
             return;
         }
+    // Feature record lost — EA was reloaded while this trade was open.
+    // Log the outcome so we know it happened; backprop is skipped.
+    Print("BTAI: Features lost for posId=",posId," profit=",DoubleToString(profit,2),
+          " (EA reloaded mid-trade) — skipping backprop");
+    LogClose(posId,profit);
 }
 bool HasTrade()
 {
@@ -1065,15 +1081,15 @@ void OnTick()
     g_lastDir    = sig.direction;
     g_lastSigT   = TimeCurrent();
 
-    // Bootstrap mode: model untrained (<10 steps) → trade on trend+breakout
-    // alone so the AI gets real trade outcomes to learn from.
-    // Once trained, normal threshold applies.
-    double effectiveThreshold = (g_trainSteps < 10) ? 0.40 : InpAI_Threshold;
+    // Bootstrap mode: model untrained (<10 steps) → trade on trend+breakout alone.
+    // InpBootstrapThreshold (default 0.48) is higher than old 0.40 to avoid
+    // random entries — the model outputs ~0.50 neutral, so 0.40 caught everything.
+    double effectiveThreshold = (g_trainSteps < 10) ? InpBootstrapThreshold : InpAI_Threshold;
 
     if(score < effectiveThreshold)
     {
         g_lastReason = (g_trainSteps < 10)
-            ? StringFormat("BOOTSTRAP %.3f", score)
+            ? StringFormat("BOOTSTRAP %.3f / %.2f", score, InpBootstrapThreshold)
             : StringFormat("SCORE LOW %.3f", score);
         LogSkip(sig, score);
         UpdateDashboard();
@@ -1081,9 +1097,22 @@ void OnTick()
     }
 
     double slPips = CalcSLPips(sig);
-    if(slPips < 1.0)
+
+    // Real-pip minimum guard — CalcSLPips now returns actual pips.
+    // Tiny ATR (e.g. quiet M15 bar) → tiny SL → huge lot → instant SL hit.
+    double minSL = (InpMinSL_Pips > 0) ? InpMinSL_Pips : 1.0;
+    if(slPips < minSL)
     {
-        g_lastReason = "SL TOO SMALL";
+        g_lastReason = StringFormat("SL TOO TIGHT %.1f pips (min %.0f)", slPips, minSL);
+        UpdateDashboard();
+        return;
+    }
+
+    // Portfolio-wide cap: if too many positions open across ALL EA instances,
+    // don't add another correlated bet (protects against all 6 EAs firing at once).
+    if(InpMaxPortfolioPos > 0 && PositionsTotal() >= InpMaxPortfolioPos)
+    {
+        g_lastReason = StringFormat("MAX PORTFOLIO %d", InpMaxPortfolioPos);
         UpdateDashboard();
         return;
     }
