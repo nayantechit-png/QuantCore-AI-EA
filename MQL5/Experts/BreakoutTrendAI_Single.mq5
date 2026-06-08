@@ -662,7 +662,7 @@ void UpdateDashboard()
     _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
-    _L("SUB", "  Self-Learning EA  v3.0 | 2026-06-05", lx, DB_Y+15, C_DIM,  8);
+    _L("SUB", "  Self-Learning EA  v3.1 | " + TimeToString(TimeCurrent(), TIME_DATE), lx, DB_Y+15, C_DIM,  8);
 
     int y = DB_Y + 46;
 
