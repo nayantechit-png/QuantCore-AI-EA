@@ -873,15 +873,21 @@ void OpenTrade(Signal &sig, double lots, double score, double &feat[])
     if(sig.direction==1){ req.type=ORDER_TYPE_BUY;  req.price=price; }
     else                { req.type=ORDER_TYPE_SELL; req.price=price; }
 
+    // Store features BEFORE OrderSend — in MQL5 demo/live, OnTradeTransaction
+    // (DEAL_ENTRY_IN) fires DURING the OrderSend call, before it returns.
+    // If StorePend runs after, g_hasPend=false when AssignPend checks, so
+    // features are never saved in g_mem, and every trade closes unlearned.
+    StorePend(feat);
+
     if(OrderSend(req,res))
     {
         tradesToday++;
-        StorePend(feat);
         LogOpen(sig, lots, score, res.order);
         g_lastReason = StringFormat("OPENED #%d", (int)res.order);
     }
     else
     {
+        g_hasPend = false;  // order failed — discard the pending features
         g_lastReason = StringFormat("ERR %d: %s", res.retcode, res.comment);
         Print("OrderSend failed: ", res.retcode, " ", res.comment,
               " fill=", EnumToString(req.type_filling));
