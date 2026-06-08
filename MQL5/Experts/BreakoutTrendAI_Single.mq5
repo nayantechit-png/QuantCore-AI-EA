@@ -35,6 +35,7 @@ input double InpAI_Threshold         = 0.55;
 input double InpBootstrapThreshold   = 0.48;  // Score floor during bootstrap (<10 trades) — was 0.40, too low
 input double InpMinSL_Pips           = 15.0;  // Minimum SL in real pips; 0 = disabled
 input int    InpMaxPortfolioPos      = 3;     // Max total open positions across ALL EA instances
+input double InpBE_R_Trigger         = 1.0;   // Move SL to break-even when profit reaches N × SL distance (0 = off)
 input string InpAI_ModelFile         = "btai_model.dat";
 
 input double InpLearningRate         = 0.001;
@@ -895,27 +896,51 @@ void OpenTrade(Signal &sig, double lots, double score, double &feat[])
 }
 void ManageTrades()
 {
-    for(int i=PositionsTotal()-1;i>=0;i--)
+    if(InpBE_R_Trigger <= 0) return;
+
+    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+    for(int i = PositionsTotal()-1; i >= 0; i--)
     {
-        if(PositionGetSymbol(i)!=_Symbol) continue;
-        if((int)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
-        ulong  tk =(ulong)PositionGetInteger(POSITION_TICKET);
-        double en =PositionGetDouble(POSITION_PRICE_OPEN);
-        double sl =PositionGetDouble(POSITION_SL);
-        double tp =PositionGetDouble(POSITION_TP);
-        bool isBuy=((int)PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-        double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-        double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-        bool hitTP = isBuy?(bid>=tp):(ask<=tp);
-        bool notBE = isBuy?(sl<en):(sl>en);
-        if(hitTP && notBE)
-        {
-            MqlTradeRequest r; MqlTradeResult rs; ZeroMemory(r); ZeroMemory(rs);
-            r.action=TRADE_ACTION_SLTP; r.position=tk;
-            r.symbol=_Symbol; r.sl=en; r.tp=tp;
-            if(!OrderSend(r,rs))
-                Print("BE-stop failed: ",rs.retcode);
-        }
+        if(PositionGetSymbol(i) != _Symbol) continue;
+        if((int)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+
+        ulong  tk    = (ulong)PositionGetInteger(POSITION_TICKET);
+        double en    = PositionGetDouble(POSITION_PRICE_OPEN);
+        double sl    = PositionGetDouble(POSITION_SL);
+        double tp    = PositionGetDouble(POSITION_TP);
+        bool   isBuy = ((int)PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+
+        double slDist = MathAbs(en - sl);
+        if(slDist < _Point) continue;  // no valid SL set
+
+        // Check if BE is already done (SL at or past entry)
+        bool beAlreadyDone = isBuy ? (sl >= en - _Point) : (sl <= en + _Point);
+        if(beAlreadyDone) continue;
+
+        // Trigger: price has moved InpBE_R_Trigger × SL distance in profit
+        double trigDist  = slDist * InpBE_R_Trigger;
+        bool   triggered = isBuy ? (bid >= en + trigDist)
+                                 : (ask <= en - trigDist);
+        if(!triggered) continue;
+
+        // Move SL to entry + 1 pip buffer (avoids spread-hitting entry exactly)
+        double pip   = PipSize();
+        double newSL = isBuy ? (en + pip) : (en - pip);
+
+        MqlTradeRequest r; MqlTradeResult rs; ZeroMemory(r); ZeroMemory(rs);
+        r.action   = TRADE_ACTION_SLTP;
+        r.position = tk;
+        r.symbol   = _Symbol;
+        r.sl       = newSL;
+        r.tp       = tp;
+        if(OrderSend(r, rs))
+            Print("BTAI BE: #", tk, " SL moved to entry ", DoubleToString(newSL, _Digits),
+                  " (", (isBuy?"BUY":"SELL"), " profit=",
+                  DoubleToString(PositionGetDouble(POSITION_PROFIT), 2), ")");
+        else
+            Print("BTAI BE failed: ", rs.retcode, " #", tk);
     }
 }
 
@@ -1028,6 +1053,10 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
+    // Break-even runs every tick so it reacts instantly when price crosses the trigger.
+    // Must be before the new-bar gate — otherwise BE fires only every 15 minutes.
+    ManageTrades();
+
     if(!IsNewBar()) return;
     DailyReset();        // reset trade counter + daily equity at midnight
 
@@ -1052,7 +1081,6 @@ void OnTick()
         return;
     }
 
-    ManageTrades();
     if(HasTrade())
     {
         g_lastReason = "TRADE OPEN";
