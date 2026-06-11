@@ -1,0 +1,70 @@
+; ════════════════════════════════════════════════════════════
+; FusionAI EA v1.12 — FTMO preset, ONE chart
+; Attach to a single EURUSD M30 chart. The EA trades all six
+; symbols itself — remove ALL QuantCore charts first.
+; ════════════════════════════════════════════════════════════
+
+; ──── SYMBOLS ────
+; USDCHF removed: negatively correlated with EURUSD — running both
+; simultaneously doubles USD directional risk and caused -9.01 daily.
+; NZDUSD replaces it: clean trends, low correlation with the others.
+Inp_Symbols=EURUSD,GBPUSD,NZDUSD,AUDUSD,XAUUSD,GBPAUD
+; FTMO server is UTC+2/+3 (EET) — auto-detect handles it
+Inp_ServerUTCOffset=99
+Inp_IndicesNYOnly=true
+
+; ──── PROP FIRM RISK (FTMO: 5% daily / 10% total) ────
+Inp_RiskPerTrade=0.40
+Inp_MaxDailyLoss=4.5
+Inp_MaxTotalLoss=9.0
+; Account started at 100k — set explicitly so the 10% total-loss stop
+; is measured from the correct baseline, not the current dipped balance.
+Inp_BaselineBalance=100000
+Inp_TargetPct=10.0
+Inp_MaxTradesPerDay=6
+Inp_MaxTradesPerSym=2
+Inp_MaxPortfolioPos=2
+Inp_MaxSpread_ATR=0.15
+
+; ──── ENSEMBLE SIGNAL ENGINE ────
+Inp_MinScore=0.62
+Inp_ScoreMargin=0.10
+Inp_MinADX=18.0
+W_Trend=0.30
+W_Momentum=0.25
+W_Regime=0.20
+W_Kalman=0.15
+W_MTF=0.10
+Inp_KF_Delta=0.0001
+Inp_KF_Ve=0.001
+
+; ──── SELF-LEARNING AI ────
+Inp_AI_Threshold=0.55
+Inp_AI_BootstrapThr=0.45
+Inp_BootstrapSteps=10
+Inp_LearnRate=0.001
+Inp_MomentumNN=0.90
+Inp_SaveEveryN=5
+
+; ──── TRADE MANAGEMENT ────
+Inp_SL_ATR=1.6
+Inp_TP_ATR=3.0
+Inp_BE_R=1.0
+Inp_UseTrail=true
+Inp_Trail_ATR=1.2
+
+; ──── SESSIONS (UTC) ────
+Inp_TradeLondon=true
+Inp_TradeNewYork=true
+Inp_SkipEdgeHours=true
+Inp_FridayCutoff=16
+Inp_FridayCloseHour=20
+
+; ──── LOSS GUARDS ────
+Inp_MaxConsecLoss=3
+Inp_PauseHours=4.0
+
+; ──── MISC ────
+; different magic from RoboForex instance (909090)
+Inp_Magic=909091
+Inp_ShowDashboard=true
