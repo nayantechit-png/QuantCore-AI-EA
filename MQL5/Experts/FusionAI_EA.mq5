@@ -17,9 +17,9 @@
 //|  run on any of the five symbols, M30 or lower).                  |
 //+------------------------------------------------------------------+
 #property copyright "QuantCore / BTAI fusion"
-#property version   "1.10"
+#property version   "1.11"
 #property strict
-#property description "FusionAI — GFv8 pairs, H1+M30, indicator ensemble + per-symbol self-learning AI"
+#property description "FusionAI — GFv8+NAS100, H1+M30, indicator ensemble + per-symbol self-learning AI"
 
 // ═══════════════════════════════════════════════════════════════════
 //  INPUTS
@@ -332,14 +332,16 @@ int UTCDow()
     return dt.day_of_week;
 }
 
-// Resolve "EURUSD" → broker name ("EURUSD.x", "EURUSDm", …) and select it
+// Resolve "EURUSD" → broker name ("EURUSD.x", "EURUSDm", …) and select it.
+// Searches the full broker catalog (true = all symbols, not just Market Watch).
 string ResolveSymbol(string base)
 {
     if(SymbolSelect(base, true)) return base;
-    int total = SymbolsTotal(false);
+    // Search full broker catalog for any symbol that starts with base
+    int total = SymbolsTotal(true);
     for(int i=0;i<total;i++)
     {
-        string s = SymbolName(i, false);
+        string s = SymbolName(i, true);
         if(StringFind(s, base) == 0)
         {
             if(SymbolSelect(s, true)) return s;
@@ -348,30 +350,91 @@ string ResolveSymbol(string base)
     return "";
 }
 
+// Scan full broker catalog for the first symbol whose name contains any of the
+// supplied keywords.  Used as a last-resort for index CFDs whose names vary wildly.
+string BrokerScanForKeyword(const string &keys[], int nk)
+{
+    int total = SymbolsTotal(true);
+    for(int i=0;i<total;i++)
+    {
+        string s = SymbolName(i, true);
+        string su = s; StringToUpper(su);
+        for(int k=0;k<nk;k++)
+            if(StringFind(su, keys[k]) >= 0)
+            {
+                // exclude plain FX pairs — they contain letters only and are short
+                if(StringLen(s) <= 6) continue;
+                // exclude obvious non-index symbols
+                if(StringFind(su,"USD")>=0 && StringLen(s)<=8) continue;
+                if(SymbolSelect(s, true)) return s;
+            }
+    }
+    return "";
+}
+
 // Index CFDs have no standard ticker — every broker names them differently
-// (RoboForex: US100, others: USTEC, NAS100, US100Cash…). Try the aliases.
+// (RoboForex: US100, others: USTEC, NAS100, US100Cash…). Try the aliases,
+// then do a broader keyword scan so no broker naming is missed.
 // isIndex flags the symbol for NY-only sessions.
 string ResolveWithAliases(string base, bool &isIndex)
 {
     isIndex = false;
     string aliases = "";
+    string scanKeys[];
+
     if(base=="NAS100" || base=="USTEC"  || base=="US100")
-    { isIndex=true; aliases="NAS100,USTEC,US100,US100Cash,USTEC100,NQ100,TECH100"; }
+    {
+        isIndex=true;
+        aliases="NAS100,USTEC,US100,US100Cash,USTEC100,NQ100,TECH100,NDX100,USATEC,NASUSD,US10";
+        string k[] = {"NAS100","USTEC","US100","NQ100","TECH100","NDX","NASDAQ"};
+        ArrayResize(scanKeys, ArraySize(k));
+        for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
+    }
     else if(base=="US30" || base=="DJ30")
-    { isIndex=true; aliases="US30,DJ30,US30Cash,DOW30"; }
+    {
+        isIndex=true;
+        aliases="US30,DJ30,US30Cash,DOW30,USAIND";
+        string k[] = {"US30","DJ30","DOW30","DJI"};
+        ArrayResize(scanKeys, ArraySize(k));
+        for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
+    }
     else if(base=="SPX500" || base=="US500")
-    { isIndex=true; aliases="SPX500,US500,US500Cash,SP500"; }
+    {
+        isIndex=true;
+        aliases="SPX500,US500,US500Cash,SP500,SPX,SPXUSD";
+        string k[] = {"SPX500","US500","SP500","SPX"};
+        ArrayResize(scanKeys, ArraySize(k));
+        for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
+    }
     else if(base=="GER40" || base=="DE40" || base=="DAX40")
-    { isIndex=true; aliases="GER40,DE40,DE40Cash,DAX40,GER40Cash"; }
+    {
+        isIndex=true;
+        aliases="GER40,DE40,DE40Cash,DAX40,GER40Cash,DAX30";
+        string k[] = {"GER40","DE40","DAX40","DAX30"};
+        ArrayResize(scanKeys, ArraySize(k));
+        for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
+    }
 
     if(!isIndex) return ResolveSymbol(base);
 
+    // 1) exact alias list
     string parts[];
     int n = StringSplit(aliases, ',', parts);
     for(int i=0;i<n;i++)
     {
         string s = ResolveSymbol(parts[i]);
         if(s != "") return s;
+    }
+
+    // 2) broad keyword scan over full broker catalog
+    if(ArraySize(scanKeys) > 0)
+    {
+        string s = BrokerScanForKeyword(scanKeys, ArraySize(scanKeys));
+        if(s != "")
+        {
+            Print("FusionAI: ",base," not found by alias — resolved to '",s,"' via keyword scan");
+            return s;
+        }
     }
     return "";
 }
@@ -1082,7 +1145,7 @@ void UpdateDashboard()
     _R("HD", X-8,Y-8, W+16, 38, C_HDR);
     _L("T1","  FUSION AI — GFv8 PAIRS + NAS100 | H1+M30 | SELF-LEARNING", X,Y, C_WHT,10);
     int off = ServerOffsetHours();
-    _L("T2",StringFormat("  v1.10 | %s | UTC %02d:%02d (srv%+d) | magic %d",
+    _L("T2",StringFormat("  v1.11 | %s | UTC %02d:%02d (srv%+d) | magic %d",
             TimeToString(TimeCurrent(),TIME_DATE|TIME_MINUTES),
             UTCHour(),UTCMinute(),off,(int)Inp_Magic), X,Y+15, C_DIM,8);
 
