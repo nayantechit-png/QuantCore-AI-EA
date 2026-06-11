@@ -10,6 +10,19 @@ Trades Forex major pairs and Gold (XAU/USD) using a 5-component ensemble AI sign
 
 ---
 
+## ⭐ FusionAI — the current flagship
+
+**`MQL5/Experts/FusionAI_EA.mq5`** merges a month of live findings into one EA:
+GoatFunded v8 pair set (EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD), H1 trend + M30
+entry engines, the QuantCore indicator ensemble, and BTAI's per-symbol
+self-learning neural network. **Attach to a single chart — it trades all five
+pairs itself.** Fully backtestable in the MT5 Strategy Tester.
+
+→ Setup & backtest guide: [`docs/FusionAI_EA_Guide.md`](docs/FusionAI_EA_Guide.md)
+→ Preset: [`MQL5/Presets/FusionAI_GFv8.set`](MQL5/Presets/FusionAI_GFv8.set)
+
+---
+
 ## Strategy Overview
 
 | Component | Method | Weight |
