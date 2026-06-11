@@ -17,7 +17,7 @@
 //|  run on any of the five symbols, M30 or lower).                  |
 //+------------------------------------------------------------------+
 #property copyright "QuantCore / BTAI fusion"
-#property version   "1.11"
+#property version   "1.12"
 #property strict
 #property description "FusionAI — GFv8+NAS100, H1+M30, indicator ensemble + per-symbol self-learning AI"
 
@@ -337,12 +337,16 @@ int UTCDow()
 string ResolveSymbol(string base)
 {
     if(SymbolSelect(base, true)) return base;
-    // Search full broker catalog for any symbol that starts with base
+    // Search full broker catalog, case-insensitive, prefix match
+    // (also matches past a leading '.' — RoboForex prefixes indices with one)
+    string bu = base; StringToUpper(bu);
     int total = SymbolsTotal(true);
     for(int i=0;i<total;i++)
     {
-        string s = SymbolName(i, true);
-        if(StringFind(s, base) == 0)
+        string s  = SymbolName(i, true);
+        string su = s; StringToUpper(su);
+        int pos = StringFind(su, bu);
+        if(pos == 0 || (pos == 1 && StringGetCharacter(su,0)=='.'))
         {
             if(SymbolSelect(s, true)) return s;
         }
@@ -381,35 +385,38 @@ string ResolveWithAliases(string base, bool &isIndex)
     isIndex = false;
     string aliases = "";
     string scanKeys[];
+    string bu = base; StringToUpper(bu);   // case-insensitive matching
 
-    if(base=="NAS100" || base=="USTEC"  || base=="US100")
+    if(bu=="NAS100" || bu=="USTEC" || bu=="US100" ||
+       bu=="USTECH" || bu==".USTECHCASH" || bu=="USTECHCASH")
     {
         isIndex=true;
-        aliases="NAS100,USTEC,US100,US100Cash,USTEC100,NQ100,TECH100,NDX100,USATEC,NASUSD,US10";
-        string k[] = {"NAS100","USTEC","US100","NQ100","TECH100","NDX","NASDAQ"};
+        // .USTECHCash = RoboForex
+        aliases=".USTECHCash,USTECHCash,NAS100,USTEC,US100,US100Cash,USTEC100,NQ100,TECH100,NDX100,USTECH";
+        string k[] = {"USTECH","NAS100","USTEC","US100","NQ100","TECH100","NDX","NASDAQ"};
         ArrayResize(scanKeys, ArraySize(k));
         for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
     }
-    else if(base=="US30" || base=="DJ30")
+    else if(bu=="US30" || bu=="DJ30" || bu==".US30CASH")
     {
         isIndex=true;
-        aliases="US30,DJ30,US30Cash,DOW30,USAIND";
+        aliases=".US30Cash,US30,DJ30,US30Cash,DOW30";
         string k[] = {"US30","DJ30","DOW30","DJI"};
         ArrayResize(scanKeys, ArraySize(k));
         for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
     }
-    else if(base=="SPX500" || base=="US500")
+    else if(bu=="SPX500" || bu=="US500" || bu==".US500CASH")
     {
         isIndex=true;
-        aliases="SPX500,US500,US500Cash,SP500,SPX,SPXUSD";
+        aliases=".US500Cash,SPX500,US500,US500Cash,SP500,SPX";
         string k[] = {"SPX500","US500","SP500","SPX"};
         ArrayResize(scanKeys, ArraySize(k));
         for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
     }
-    else if(base=="GER40" || base=="DE40" || base=="DAX40")
+    else if(bu=="GER40" || bu=="DE40" || bu=="DAX40" || bu==".DE40CASH")
     {
         isIndex=true;
-        aliases="GER40,DE40,DE40Cash,DAX40,GER40Cash,DAX30";
+        aliases=".DE40Cash,GER40,DE40,DE40Cash,DAX40,GER40Cash,DAX30";
         string k[] = {"GER40","DE40","DAX40","DAX30"};
         ArrayResize(scanKeys, ArraySize(k));
         for(int i=0;i<ArraySize(k);i++) scanKeys[i]=k[i];
@@ -1145,7 +1152,7 @@ void UpdateDashboard()
     _R("HD", X-8,Y-8, W+16, 38, C_HDR);
     _L("T1","  FUSION AI — GFv8 PAIRS + NAS100 | H1+M30 | SELF-LEARNING", X,Y, C_WHT,10);
     int off = ServerOffsetHours();
-    _L("T2",StringFormat("  v1.11 | %s | UTC %02d:%02d (srv%+d) | magic %d",
+    _L("T2",StringFormat("  v1.12 | %s | UTC %02d:%02d (srv%+d) | magic %d",
             TimeToString(TimeCurrent(),TIME_DATE|TIME_MINUTES),
             UTCHour(),UTCMinute(),off,(int)Inp_Magic), X,Y+15, C_DIM,8);
 
@@ -1203,7 +1210,8 @@ int OnInit()
         string base = parts[i];
         StringTrimLeft(base); StringTrimRight(base);
         if(StringLen(base)==0) continue;
-        StringToUpper(base);
+        // keep original case — broker names like .USTECHCash are case-sensitive;
+        // ResolveWithAliases matches case-insensitively internally
         bool isIdx = false;
         string sym = ResolveWithAliases(base, isIdx);
         if(sym==""){ Print("FusionAI: symbol not found: ",base," — skipped"); continue; }
@@ -1246,6 +1254,7 @@ int OnInit()
 
         // model + memory files (lower-case base name, suffix stripped)
         string lo=base; StringToLower(lo);
+        StringReplace(lo, ".", "");   // .USTECHCash → ustechcash
         c.modelFile = "fusion_"+lo+".dat";
         c.memFile   = "fusion_"+lo+"_mem.bin";
         c.net.InitRandom();

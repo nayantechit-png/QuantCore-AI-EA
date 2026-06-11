@@ -5,7 +5,8 @@
 ; ════════════════════════════════════════════════════════════
 
 ; ──── SYMBOLS ────
-; NAS100 auto-resolves to your broker's name (US100, USTEC, ...)
+; NAS100 auto-resolves to your broker's name
+; (RoboForex: .USTECHCash — handled automatically since v1.12)
 Inp_Symbols=EURUSD,GBPUSD,AUDUSD,NZDUSD,XAUUSD,NAS100
 ; 99 = auto-detect broker UTC offset (RoboForex June = +3). Only set
 ; manually if the dashboard UTC clock looks wrong.

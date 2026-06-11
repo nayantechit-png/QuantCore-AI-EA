@@ -19,8 +19,9 @@ and BTAI's self-learning neural network — into a single EA that runs from
 | AI | One neural network **per symbol** (32→24→12→1), learns from every closed trade |
 | Sessions | FX/Gold: London + New York; indices: NY only. Session-edge hours (07/13/16/21 UTC) skipped |
 
-NAS100 resolves automatically to whatever your broker calls it (US100,
-USTEC, US100Cash, …) and trades New York hours only.
+NAS100 resolves automatically to whatever your broker calls it
+(RoboForex: `.USTECHCash`; others: US100, USTEC, US100Cash, …) and trades
+New York hours only.
 
 **Server time is auto-converted to UTC** (`Inp_ServerUTCOffset = 99` = auto).
 The dashboard header shows the computed UTC clock — verify it once after
