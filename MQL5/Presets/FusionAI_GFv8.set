@@ -5,8 +5,12 @@
 ; ════════════════════════════════════════════════════════════
 
 ; ──── SYMBOLS ────
-Inp_Symbols=EURUSD,GBPUSD,AUDUSD,NZDUSD,XAUUSD
-Inp_ServerUTCOffset=0
+; NAS100 auto-resolves to your broker's name (US100, USTEC, ...)
+Inp_Symbols=EURUSD,GBPUSD,AUDUSD,NZDUSD,XAUUSD,NAS100
+; 99 = auto-detect broker UTC offset (RoboForex June = +3). Only set
+; manually if the dashboard UTC clock looks wrong.
+Inp_ServerUTCOffset=99
+Inp_IndicesNYOnly=true
 
 ; ──── PROP FIRM RISK (GoatFunded: 5% daily / 10% total) ────
 Inp_RiskPerTrade=0.40

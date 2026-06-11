@@ -17,16 +17,17 @@
 //|  run on any of the five symbols, M30 or lower).                  |
 //+------------------------------------------------------------------+
 #property copyright "QuantCore / BTAI fusion"
-#property version   "1.00"
+#property version   "1.10"
 #property strict
 #property description "FusionAI — GFv8 pairs, H1+M30, indicator ensemble + per-symbol self-learning AI"
 
 // ═══════════════════════════════════════════════════════════════════
 //  INPUTS
 // ═══════════════════════════════════════════════════════════════════
-input group "═══ SYMBOLS (GoatFunded v8 set) ═══"
-input string Inp_Symbols          = "EURUSD,GBPUSD,AUDUSD,NZDUSD,XAUUSD"; // comma list, broker suffix auto-detected
-input int    Inp_ServerUTCOffset  = 0;     // server time minus UTC, hours (0 = server is UTC)
+input group "═══ SYMBOLS (GoatFunded v8 set + NAS100) ═══"
+input string Inp_Symbols          = "EURUSD,GBPUSD,AUDUSD,NZDUSD,XAUUSD,NAS100"; // comma list, broker suffix/alias auto-detected
+input int    Inp_ServerUTCOffset  = 99;    // server minus UTC, hours. 99 = AUTO-DETECT (recommended)
+input bool   Inp_IndicesNYOnly    = true;  // indices (NAS100 etc.) trade New York hours only
 
 input group "═══ PROP FIRM RISK (GoatFunded: 5% daily / 10% total) ═══"
 input double Inp_RiskPerTrade     = 0.40;  // % equity risked per trade
@@ -246,6 +247,7 @@ struct TRec
 struct SymCtx
 {
     string sym;
+    bool   isIndex;        // index CFD (NAS100 …) → NY-only sessions
     // H1 engine
     int hEMA20H1, hEMA50H1, hEMA200H1, hRSIH1, hADXH1, hATRH1;
     // M30 engine
@@ -300,15 +302,32 @@ double GetB(int handle, int bufIdx, int shift)
     return a[0];
 }
 
+// Auto offset: live, TimeGMT() comes from the synced PC clock, so
+// server−GMT gives the broker's true UTC shift (RoboForex June = +3 —
+// without this, 13:56 server looked like 13 UTC = skipped edge hour
+// and the EA sat "OUT OF SESSION" through the whole London morning).
+// In the tester TimeGMT()==server time → offset 0, i.e. bars are UTC.
+int ServerOffsetHours()
+{
+    if(Inp_ServerUTCOffset != 99) return Inp_ServerUTCOffset;
+    return (int)MathRound((double)(TimeCurrent() - TimeGMT()) / 3600.0);
+}
+
 int UTCHour()
 {
-    datetime t = TimeCurrent() - (datetime)(Inp_ServerUTCOffset*3600);
+    datetime t = TimeCurrent() - (datetime)(ServerOffsetHours()*3600);
     MqlDateTime dt; TimeToStruct(t, dt);
     return dt.hour;
 }
+int UTCMinute()
+{
+    datetime t = TimeCurrent() - (datetime)(ServerOffsetHours()*3600);
+    MqlDateTime dt; TimeToStruct(t, dt);
+    return dt.min;
+}
 int UTCDow()
 {
-    datetime t = TimeCurrent() - (datetime)(Inp_ServerUTCOffset*3600);
+    datetime t = TimeCurrent() - (datetime)(ServerOffsetHours()*3600);
     MqlDateTime dt; TimeToStruct(t, dt);
     return dt.day_of_week;
 }
@@ -325,6 +344,34 @@ string ResolveSymbol(string base)
         {
             if(SymbolSelect(s, true)) return s;
         }
+    }
+    return "";
+}
+
+// Index CFDs have no standard ticker — every broker names them differently
+// (RoboForex: US100, others: USTEC, NAS100, US100Cash…). Try the aliases.
+// isIndex flags the symbol for NY-only sessions.
+string ResolveWithAliases(string base, bool &isIndex)
+{
+    isIndex = false;
+    string aliases = "";
+    if(base=="NAS100" || base=="USTEC"  || base=="US100")
+    { isIndex=true; aliases="NAS100,USTEC,US100,US100Cash,USTEC100,NQ100,TECH100"; }
+    else if(base=="US30" || base=="DJ30")
+    { isIndex=true; aliases="US30,DJ30,US30Cash,DOW30"; }
+    else if(base=="SPX500" || base=="US500")
+    { isIndex=true; aliases="SPX500,US500,US500Cash,SP500"; }
+    else if(base=="GER40" || base=="DE40" || base=="DAX40")
+    { isIndex=true; aliases="GER40,DE40,DE40Cash,DAX40,GER40Cash"; }
+
+    if(!isIndex) return ResolveSymbol(base);
+
+    string parts[];
+    int n = StringSplit(aliases, ',', parts);
+    for(int i=0;i<n;i++)
+    {
+        string s = ResolveSymbol(parts[i]);
+        if(s != "") return s;
     }
     return "";
 }
@@ -649,11 +696,12 @@ bool RiskLocked(string &why)
     return false;
 }
 
-bool InSession()
+bool InSession(bool isIndex)
 {
     int h = UTCHour();
     bool lon = Inp_TradeLondon  && (h>=7  && h<13);
     bool ny  = Inp_TradeNewYork && (h>=13 && h<21);
+    if(isIndex && Inp_IndicesNYOnly) lon = false;   // NAS100: US cash hours only
     if(!(lon||ny)) return false;
     if(Inp_SkipEdgeHours && (h==7||h==13||h==16||h==21)) return false;
     if(UTCDow()==5 && h>=Inp_FridayCutoff) return false;   // Friday wind-down
@@ -724,7 +772,7 @@ void TryOpen(SymCtx &c)
 
     // ── global guards ────────────────────────────────────────────
     string why;
-    if(!InSession())                       { c.reason="OUT OF SESSION";   return; }
+    if(!InSession(c.isIndex))              { c.reason="OUT OF SESSION";   return; }
     if(RiskLocked(why))                    { c.reason=why;                return; }
     if(c.pauseUntil>0 && TimeCurrent()<c.pauseUntil)
                                            { c.reason="LOSS PAUSE";       return; }
@@ -1032,9 +1080,11 @@ void UpdateDashboard()
     int H = 96 + LH*(rows+1) + 54;
     _R("BG", X-8,Y-8, W+16, H, C_BG);
     _R("HD", X-8,Y-8, W+16, 38, C_HDR);
-    _L("T1","  FUSION AI — GFv8 PAIRS | H1+M30 | SELF-LEARNING", X,Y, C_WHT,10);
-    _L("T2","  v1.00 | "+TimeToString(TimeCurrent(),TIME_DATE|TIME_MINUTES)
-            +" | magic "+IntegerToString((int)Inp_Magic), X,Y+15, C_DIM,8);
+    _L("T1","  FUSION AI — GFv8 PAIRS + NAS100 | H1+M30 | SELF-LEARNING", X,Y, C_WHT,10);
+    int off = ServerOffsetHours();
+    _L("T2",StringFormat("  v1.10 | %s | UTC %02d:%02d (srv%+d) | magic %d",
+            TimeToString(TimeCurrent(),TIME_DATE|TIME_MINUTES),
+            UTCHour(),UTCMinute(),off,(int)Inp_Magic), X,Y+15, C_DIM,8);
 
     int y=Y+44;
     string lock = g_totalLocked?"TOTAL LOCK":g_dailyLocked?"DAILY LOCK":"TRADING";
@@ -1064,7 +1114,7 @@ void UpdateDashboard()
     }
     y+=4;
     _L("FT","* bootstrap (model < "+IntegerToString(Inp_BootstrapSteps)+" trades)   "
-            +"sessions: Lon+NY, edges skipped", X,y, C_DIM,8);
+            +"FX: Lon+NY | indices: NY only | edges skipped", X,y, C_DIM,8);
     ChartRedraw(0);
 }
 
@@ -1090,11 +1140,15 @@ int OnInit()
         string base = parts[i];
         StringTrimLeft(base); StringTrimRight(base);
         if(StringLen(base)==0) continue;
-        string sym = ResolveSymbol(base);
+        StringToUpper(base);
+        bool isIdx = false;
+        string sym = ResolveWithAliases(base, isIdx);
         if(sym==""){ Print("FusionAI: symbol not found: ",base," — skipped"); continue; }
+        if(sym!=base) Print("FusionAI: ",base," resolved to broker symbol ",sym);
 
         SymCtx c;
         c.sym = sym;
+        c.isIndex = isIdx;
         // H1 engine
         c.hEMA20H1  = iMA (sym,PERIOD_H1, 20,0,MODE_EMA,PRICE_CLOSE);
         c.hEMA50H1  = iMA (sym,PERIOD_H1, 50,0,MODE_EMA,PRICE_CLOSE);
@@ -1162,7 +1216,8 @@ int OnInit()
 
     InitLogger();
     UpdateDashboard();
-    Print("FusionAI v1.00: ",g_nSym," symbols | baseline=",DoubleToString(g_baseline,2));
+    Print("FusionAI v1.10: ",g_nSym," symbols | baseline=",DoubleToString(g_baseline,2),
+          " | server UTC offset=",ServerOffsetHours(),"h");
     return INIT_SUCCEEDED;
 }
 

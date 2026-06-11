@@ -13,11 +13,18 @@ and BTAI's self-learning neural network — into a single EA that runs from
 
 | | |
 |---|---|
-| Pairs | EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD (the GFv8 set) |
+| Pairs | EURUSD, GBPUSD, AUDUSD, NZDUSD, XAUUSD (the GFv8 set) + NAS100 |
 | Trend engine | H1 — EMA 20/50/200 stack, ADX/DI, RSI, Kalman filter |
 | Entry engine | M30 — range breakout (BRK) or pullback-resume (PBK) |
 | AI | One neural network **per symbol** (32→24→12→1), learns from every closed trade |
-| Sessions | London + New York, session-edge hours (07/13/16/21 UTC) skipped |
+| Sessions | FX/Gold: London + New York; indices: NY only. Session-edge hours (07/13/16/21 UTC) skipped |
+
+NAS100 resolves automatically to whatever your broker calls it (US100,
+USTEC, US100Cash, …) and trades New York hours only.
+
+**Server time is auto-converted to UTC** (`Inp_ServerUTCOffset = 99` = auto).
+The dashboard header shows the computed UTC clock — verify it once after
+attaching. If it's wrong, set the offset manually (RoboForex in summer = 3).
 
 A trade needs **all three** to agree:
 1. An M30 entry trigger fires in the H1 trend direction
