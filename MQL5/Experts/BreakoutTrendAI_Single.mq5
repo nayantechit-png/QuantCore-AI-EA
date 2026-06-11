@@ -36,6 +36,8 @@ input double InpBootstrapThreshold   = 0.48;  // Score floor during bootstrap (<
 input double InpMinSL_Pips           = 15.0;  // Minimum SL in real pips; 0 = disabled
 input int    InpMaxPortfolioPos      = 3;     // Max total open positions across ALL EA instances
 input double InpBE_R_Trigger         = 1.0;   // Move SL to break-even when profit reaches N × SL distance (0 = off)
+input int    InpMaxConsecLoss        = 3;     // Pause after N consecutive losses (0 = off)
+input double InpConsecPauseHours     = 4.0;   // Pause length in hours
 input string InpAI_ModelFile         = "btai_model.dat";
 
 input double InpLearningRate         = 0.001;
@@ -49,6 +51,11 @@ double   g_lastScore  = 0.0;
 int      g_lastDir    = 0;
 datetime g_lastSigT   = 0;
 string   g_lastReason = "INIT";
+
+// Consecutive-loss guard (June 10: GBPJPY took 3 straight losing buys —
+// after N losses in a row the edge is gone for the session, stand down)
+int      g_consecLoss = 0;
+datetime g_pauseUntil = 0;
 
 // Resolved per-symbol file paths (set in OnInit)
 string   g_modelFile  = "";
@@ -659,7 +666,7 @@ void UpdateDashboard()
     int vx = DB_X+160;   // value column
 
     // ── Panel + header ───────────────────────────────────────
-    _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 458, C_BG, C_SEP);
+    _R("BG",  DB_X-8, DB_Y-8, DB_W+16, 475, C_BG, C_SEP);
     _R("HDR", DB_X-8, DB_Y-8, DB_W+16, 38,  C_HDR);
     _L("TIT", "  BREAKOUT TREND AI",                   lx, DB_Y,    C_WHT, 10);
     _L("SUB", "  Self-Learning EA  v3.1 | " + TimeToString(TimeCurrent(), TIME_DATE), lx, DB_Y+15, C_DIM,  8);
@@ -746,7 +753,14 @@ void UpdateDashboard()
 
     string canStr=canTrade?"● CAN TRADE":"● LIMIT HIT";
     _L("l_ct","Trade Status",lx, y, C_DIM, 9);
-    _L("v_ct",canStr,         vx, y, canTrade?C_GRN:C_RED, 9); y+=DB_LH+6;
+    _L("v_ct",canStr,         vx, y, canTrade?C_GRN:C_RED, 9); y+=DB_LH;
+
+    bool paused = (g_pauseUntil > 0 && TimeCurrent() < g_pauseUntil);
+    string clStr = paused
+        ? "PAUSED until " + TimeToString(g_pauseUntil, TIME_MINUTES)
+        : IntegerToString(g_consecLoss) + " / " + IntegerToString(InpMaxConsecLoss);
+    _L("l_cl","Consec Loss", lx, y, C_DIM, 9);
+    _L("v_cl",clStr,         vx, y, paused?C_RED:(g_consecLoss>0?C_YEL:C_WHT), 9); y+=DB_LH+6;
 
     // ── Footer ───────────────────────────────────────────────
     _R("FTR", DB_X-8, y, DB_W+16, 1, C_SEP);  y+=5;
@@ -814,8 +828,21 @@ void AssignPend(ulong posId)
         }
     g_hasPend=false;
 }
+void TrackConsecLoss(double profit)
+{
+    if(profit >= 0){ g_consecLoss = 0; return; }
+    g_consecLoss++;
+    if(InpMaxConsecLoss > 0 && g_consecLoss >= InpMaxConsecLoss)
+    {
+        g_pauseUntil  = TimeCurrent() + (datetime)(InpConsecPauseHours * 3600.0);
+        g_consecLoss  = 0;
+        Print("BTAI: ", InpMaxConsecLoss, " consecutive losses — paused until ",
+              TimeToString(g_pauseUntil, TIME_DATE|TIME_MINUTES));
+    }
+}
 void OnClose(ulong posId, double profit)
 {
+    TrackConsecLoss(profit);
     for(int i=0;i<MAX_MEM;i++)
         if(g_mem[i].used && g_mem[i].posId==posId)
         {
@@ -1077,6 +1104,12 @@ void OnTick()
     if(SafeGuardLocked())
     {
         g_lastReason = "SAFEGUARD LOCKED";
+        UpdateDashboard();
+        return;
+    }
+    if(g_pauseUntil > 0 && TimeCurrent() < g_pauseUntil)
+    {
+        g_lastReason = "CONSEC-LOSS PAUSE";
         UpdateDashboard();
         return;
     }
