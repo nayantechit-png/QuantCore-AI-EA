@@ -27,7 +27,7 @@ Inp_MaxSpread_ATR=0.15
 ; ──── ENSEMBLE SIGNAL ENGINE ────
 Inp_MinScore=0.62
 Inp_ScoreMargin=0.10
-Inp_MinADX=18.0
+Inp_MinADX=22.0
 W_Trend=0.30
 W_Momentum=0.25
 W_Regime=0.20
@@ -61,6 +61,9 @@ Inp_FridayCloseHour=20
 ; ──── LOSS GUARDS ────
 Inp_MaxConsecLoss=3
 Inp_PauseHours=4.0
+Inp_PortLossStreak=4
+Inp_PortPauseHours=8.0
+Inp_BreakoutNeedsH1=true
 
 ; ──── MISC ────
 Inp_Magic=909090

@@ -17,7 +17,7 @@
 //|  run on any of the five symbols, M30 or lower).                  |
 //+------------------------------------------------------------------+
 #property copyright "QuantCore / BTAI fusion"
-#property version   "1.12"
+#property version   "1.13"
 #property strict
 #property description "FusionAI — GFv8+NAS100, H1+M30, indicator ensemble + per-symbol self-learning AI"
 
@@ -77,6 +77,9 @@ input int    Inp_FridayCloseHour  = 20;    // close everything Friday at this UT
 input group "═══ LOSS GUARDS ═══"
 input int    Inp_MaxConsecLoss    = 3;     // per symbol: pause after N straight losses
 input double Inp_PauseHours       = 4.0;   // pause length, hours
+input int    Inp_PortLossStreak   = 4;     // ALL symbols: pause whole EA after N straight losses (0=off)
+input double Inp_PortPauseHours   = 8.0;   // whole-EA pause length, hours
+input bool   Inp_BreakoutNeedsH1  = true;  // T1 breakouts must agree with the H1 trend (kills counter-trend fades)
 
 input group "═══ MISC ═══"
 input long   Inp_Magic            = 909090;
@@ -287,6 +290,8 @@ int      g_lastDay       = -1;
 int      g_tradesToday   = 0;     // all symbols
 bool     g_dailyLocked   = false;
 bool     g_totalLocked   = false;
+int      g_portLossStreak= 0;     // consecutive losses across ALL symbols
+datetime g_portPauseUntil= 0;     // whole-EA pause after a portfolio loss streak
 double   g_wSum          = 1.0;   // ensemble weight normalizer
 string   g_logFile       = "fusion_log.csv";
 int      g_log           = INVALID_HANDLE;
@@ -642,7 +647,16 @@ int EntryTrigger(SymCtx &c, string &tag)
     double open1  = iOpen (c.sym, PERIOD_M30, 1);
     if(close1<=0) return 0;
 
+    // H1 trend (shared by both triggers)
+    double ema50H = GetB(c.hEMA50H1,0,1), ema200H = GetB(c.hEMA200H1,0,1);
+    double closeH = iClose(c.sym, PERIOD_H1, 1);
+    bool upH1   = (closeH>ema50H && ema50H>ema200H);
+    bool downH1 = (closeH<ema50H && ema50H<ema200H);
+
     // ── T1: range breakout ──────────────────────────────────────
+    // Counter-trend breakouts are the main false-breakout trap (they were
+    // behind the EURUSD sell-then-buy whipsaw). Optionally require the
+    // breakout to align with the H1 trend.
     int hiI = iHighest(c.sym, PERIOD_M30, MODE_HIGH, 20, 2);
     int loI = iLowest (c.sym, PERIOD_M30, MODE_LOW,  20, 2);
     if(hiI>=0 && loI>=0)
@@ -652,22 +666,19 @@ int EntryTrigger(SymCtx &c, string &tag)
         double w = (rHigh-rLow)/atr;
         if(w>=0.5 && w<=5.0)
         {
-            if(close1 > rHigh){ tag="BRK"; return  1; }
-            if(close1 < rLow) { tag="BRK"; return -1; }
+            if(close1 > rHigh && (!Inp_BreakoutNeedsH1 || upH1))
+            { tag="BRK"; return  1; }
+            if(close1 < rLow  && (!Inp_BreakoutNeedsH1 || downH1))
+            { tag="BRK"; return -1; }
         }
     }
 
     // ── T2: pullback-resume ─────────────────────────────────────
     double ema20M = GetB(c.hEMA20M30,0,1);
-    double ema50H = GetB(c.hEMA50H1,0,1), ema200H = GetB(c.hEMA200H1,0,1);
-    double closeH = iClose(c.sym, PERIOD_H1, 1);
     double K1=GetB(c.hStochM30,0,1), D1=GetB(c.hStochM30,1,1);
     double K2=GetB(c.hStochM30,0,2), D2=GetB(c.hStochM30,1,2);
     double low1 = iLow (c.sym, PERIOD_M30, 1);
     double high1= iHigh(c.sym, PERIOD_M30, 1);
-
-    bool upH1   = (closeH>ema50H && ema50H>ema200H);
-    bool downH1 = (closeH<ema50H && ema50H<ema200H);
 
     if(upH1 && low1 <= ema20M+0.3*atr && close1>open1 &&
        K1>D1 && K2<=D2 && K1<60)            // stoch turning up from pullback
@@ -844,6 +855,8 @@ void TryOpen(SymCtx &c)
     string why;
     if(!InSession(c.isIndex))              { c.reason="OUT OF SESSION";   return; }
     if(RiskLocked(why))                    { c.reason=why;                return; }
+    if(g_portPauseUntil>0 && TimeCurrent()<g_portPauseUntil)
+                                           { c.reason="EA LOSS-STREAK PAUSE"; return; }
     if(c.pauseUntil>0 && TimeCurrent()<c.pauseUntil)
                                            { c.reason="LOSS PAUSE";       return; }
     if(c.tradesToday >= Inp_MaxTradesPerSym){ c.reason="SYM TRADE CAP";   return; }
@@ -1055,8 +1068,18 @@ void HandleClose(SymCtx &c, long posId, double profit)
             Print("FusionAI ",c.sym,": ",Inp_MaxConsecLoss," straight losses — paused until ",
                   TimeToString(c.pauseUntil));
         }
+        // portfolio-wide streak: a run of losses ACROSS symbols signals a
+        // bad regime day — pause the whole EA, not just one symbol.
+        g_portLossStreak++;
+        if(Inp_PortLossStreak>0 && g_portLossStreak>=Inp_PortLossStreak)
+        {
+            g_portPauseUntil = TimeCurrent()+(datetime)(Inp_PortPauseHours*3600.0);
+            g_portLossStreak = 0;
+            Print("FusionAI: ",Inp_PortLossStreak," straight losses across all symbols — ",
+                  "WHOLE EA paused until ",TimeToString(g_portPauseUntil));
+        }
     }
-    else c.consecLoss=0;
+    else { c.consecLoss=0; g_portLossStreak=0; }
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,
@@ -1152,7 +1175,7 @@ void UpdateDashboard()
     _R("HD", X-8,Y-8, W+16, 38, C_HDR);
     _L("T1","  FUSION AI — GFv8 PAIRS + NAS100 | H1+M30 | SELF-LEARNING", X,Y, C_WHT,10);
     int off = ServerOffsetHours();
-    _L("T2",StringFormat("  v1.12 | %s | UTC %02d:%02d (srv%+d) | magic %d",
+    _L("T2",StringFormat("  v1.13 | %s | UTC %02d:%02d (srv%+d) | magic %d",
             TimeToString(TimeCurrent(),TIME_DATE|TIME_MINUTES),
             UTCHour(),UTCMinute(),off,(int)Inp_Magic), X,Y+15, C_DIM,8);
 
