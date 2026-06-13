@@ -17,7 +17,7 @@
 //|  run on any of the five symbols, M30 or lower).                  |
 //+------------------------------------------------------------------+
 #property copyright "QuantCore / BTAI fusion"
-#property version   "1.13"
+#property version   "1.14"
 #property strict
 #property description "FusionAI — GFv8+NAS100, H1+M30, indicator ensemble + per-symbol self-learning AI"
 
@@ -63,7 +63,9 @@ input int    Inp_SaveEveryN       = 5;     // save model every N training steps
 input group "═══ TRADE MANAGEMENT ═══"
 input double Inp_SL_ATR           = 1.6;   // SL distance, × M30 ATR
 input double Inp_TP_ATR           = 3.0;   // TP distance, × M30 ATR
-input double Inp_BE_R             = 1.0;   // move SL to entry at N × SL-distance profit
+input double Inp_EarlyBE_R        = 0.6;   // make trade RISK-FREE early: SL→entry at this × R (0=off)
+input double Inp_BE_R             = 1.0;   // profit-lock trigger: at this × R, pull SL to +LockProfit_R
+input double Inp_LockProfit_R     = 0.5;   // profit locked in (× R) once BE_R is reached
 input bool   Inp_UseTrail         = true;  // ATR trail after break-even
 input double Inp_Trail_ATR        = 1.2;   // trail distance, × M30 ATR
 
@@ -993,32 +995,48 @@ void ManageAll()
             continue;
         }
 
-        double slDist = MathAbs(en-sl);
-        if(slDist < pt) continue;
-        bool beDone = isBuy ? (sl >= en-pt) : (sl <= en+pt);
+        // Original risk distance (1R). The live SL moves as we trail, so we
+        // recover 1R from the fixed TP instead: rDist = tpDist × SL_ATR/TP_ATR.
+        double rDist = (Inp_TP_ATR>0.0 && tp>0.0)
+                       ? MathAbs(tp-en)*(Inp_SL_ATR/Inp_TP_ATR)
+                       : MathAbs(en-sl);
+        if(rDist < pt) continue;
 
-        double newSL = 0;
-        if(!beDone)
+        double prof = isBuy ? (bid-en) : (en-ask);   // current profit, price terms
+
+        // Build the most protective SL across all stages; only ever tightens.
+        double cand = sl;
+
+        // Stage 1 — EARLY break-even: get to risk-free fast (small buffer
+        // covers spread/commission so "breakeven" is truly free).
+        if(Inp_EarlyBE_R>0 && prof >= rDist*Inp_EarlyBE_R)
         {
-            // step 1: lock break-even at +1R
-            if(Inp_BE_R>0)
-            {
-                double trig = slDist*Inp_BE_R;
-                bool hit = isBuy ? (bid>=en+trig) : (ask<=en-trig);
-                if(hit) newSL = isBuy ? en+pt*10 : en-pt*10;   // entry ± small buffer
-            }
+            double be = isBuy ? en+pt*2 : en-pt*2;
+            cand = isBuy ? MathMax(cand,be) : MathMin(cand,be);
         }
-        else if(Inp_UseTrail)
+
+        // Stage 2 — PROFIT LOCK: at +BE_R, bank at least +LockProfit_R.
+        if(Inp_BE_R>0 && Inp_LockProfit_R>0 && prof >= rDist*Inp_BE_R)
         {
-            // step 2: ATR trail (only ever tightens)
+            double lock = isBuy ? en+rDist*Inp_LockProfit_R : en-rDist*Inp_LockProfit_R;
+            cand = isBuy ? MathMax(cand,lock) : MathMin(cand,lock);
+        }
+
+        // Stage 3 — ATR TRAIL once the stop is at/above break-even.
+        bool atBE = isBuy ? (cand >= en-pt) : (cand <= en+pt);
+        if(Inp_UseTrail && atBE)
+        {
             double atr = GetB(g_ctx[ci].hATRM30,0,1);
             if(atr>0)
             {
                 double t = isBuy ? bid-atr*Inp_Trail_ATR : ask+atr*Inp_Trail_ATR;
-                if(isBuy  && t > sl+pt) newSL=t;
-                if(!isBuy && t < sl-pt) newSL=t;
+                cand = isBuy ? MathMax(cand,t) : MathMin(cand,t);
             }
         }
+
+        double newSL = 0;
+        if(isBuy  && cand > sl+pt) newSL = cand;
+        if(!isBuy && cand < sl-pt) newSL = cand;
         if(newSL<=0) continue;
 
         MqlTradeRequest rq; MqlTradeResult rs; ZeroMemory(rq); ZeroMemory(rs);
@@ -1175,7 +1193,7 @@ void UpdateDashboard()
     _R("HD", X-8,Y-8, W+16, 38, C_HDR);
     _L("T1","  FUSION AI — GFv8 PAIRS + NAS100 | H1+M30 | SELF-LEARNING", X,Y, C_WHT,10);
     int off = ServerOffsetHours();
-    _L("T2",StringFormat("  v1.13 | %s | UTC %02d:%02d (srv%+d) | magic %d",
+    _L("T2",StringFormat("  v1.14 | %s | UTC %02d:%02d (srv%+d) | magic %d",
             TimeToString(TimeCurrent(),TIME_DATE|TIME_MINUTES),
             UTCHour(),UTCMinute(),off,(int)Inp_Magic), X,Y+15, C_DIM,8);
 

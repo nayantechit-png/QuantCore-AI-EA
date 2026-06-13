@@ -49,7 +49,9 @@ Inp_SaveEveryN=5
 ; ──── TRADE MANAGEMENT ────
 Inp_SL_ATR=1.6
 Inp_TP_ATR=3.0
+Inp_EarlyBE_R=0.6
 Inp_BE_R=1.0
+Inp_LockProfit_R=0.5
 Inp_UseTrail=true
 Inp_Trail_ATR=1.2
 

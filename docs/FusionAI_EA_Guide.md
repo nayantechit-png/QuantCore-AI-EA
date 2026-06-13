@@ -89,8 +89,12 @@ and on FX.
 ## 5. Trade management
 
 - SL = 1.6 × ATR(M30), TP = 3.0 × ATR (≈ 1.9 R)
-- Break-even (+small buffer) locked at **1R**, checked **every tick**
-- After break-even: ATR trail at 1.2 × ATR — rides H1 trends, gives back little
+- **Stage 1 — early break-even:** at **+0.6R** the SL jumps to entry, so the
+  trade is risk-free well before it reaches full target (checked every tick)
+- **Stage 2 — profit lock:** at **+1R** the SL pulls up to **+0.5R**, banking
+  half a R even if price reverses
+- **Stage 3 — ATR trail** at 1.2 × ATR — rides H1 trends, gives back little
+- All three stages only ever tighten the stop, never loosen it
 
 ## 6. How the learning works
 
